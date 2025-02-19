@@ -1,0 +1,23 @@
+// insert relevant imports
+
+//ClientHello
+rule ClientHello:
+    let
+        clienthello = {/*ProtocolVersion*/ {254, 253}, /*Random32*/ {random}, /*legacy_session_id*/ [], /*legacy_cookie*/ [], /*CipherSuite*/ [{CipherSuite_name, two_byte_id}, ...], /*legacy_compression_method*/ [0], /*Extension*/ {/*ExtensionType*/ 51, /*KeyshareClientHello*/ {name_of_method, [key_exchange, ...]}}}
+        DTLSHandshake = {/*length*/ random, /*message_seq*/ 0, /*fragment_offset*/ 0, /*fragment_length*/ length, client_hello}
+        DTLSPlaintext = {/*epoch*/ 0, /*sequence_number*/ 0, /*length*/ DTLSHandshake length+x, DTLSHandshake}
+    in
+    [  ]
+    --[  ]->
+    [Out(DTLSPlaintext)]
+
+//ClientHelloCookie
+rule ClientHelloCookie:
+    let
+        clienthello = {/*ProtocolVersion*/ {254, 253}, /*Random32*/ {random}, /*legacy_session_id*/ [], /*legacy_cookie*/ [], /*CipherSuite*/ [{CipherSuite_name, two_byte_id}], /*legacy_compression_method*/ [0], /*Extension*/ {/*ExtensionType*/ 51, /*KeyshareClientHello*/ {name_of_method, [key_exchange, ...]}, {/*ExtensionType*/ 44, /*Cookie*/ {cookie_that_depend_on_client_address}}}}
+        DTLSHandshake = {/*length*/ random, /*message_seq*/ 0, /*fragment_offset*/ 0, /*fragment_length*/ length, client_hello}
+        DTLSPlaintext = {/*epoch*/ 0, /*sequence_number*/ 0, /*length*/ DTLSHandshake length+x, DTLSHandshake}
+    in
+    [  ]
+    --[  ]->
+    [Out(DTLSPlaintext)]

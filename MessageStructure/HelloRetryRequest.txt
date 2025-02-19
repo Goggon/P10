@@ -14,7 +14,7 @@ DTLSPlaintext {
       ProtocolVersion   {254, 253};
       Random32          random;
       opaque            legacy_session_id_echo=client_session_id;
-      CipherSuite       [(Name_of_ciphersuit, two_byte_id), ...];
+      CipherSuite       [(Name_of_ciphersuit, two_byte_id)];
       uint8             legacy_compression_method = 0;
       Extension [
         ExtensionType     44; (For cookie)

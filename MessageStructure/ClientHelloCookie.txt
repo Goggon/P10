@@ -1,9 +1,9 @@
 DTLSPlaintext {
-  ContentType     DTLSHandshake(22); ([00010110])
+  ContentType     DTLSHandshake(22); ([0001 0110])
   ProtocolVersion {254, 253};
   uint16          epoch=0;
   uint48          sequence_number=0;
-  uint16          lenght;
+  uint16          length;
   opaque          DTLSHandshake {
     Handshaketype   client_hello;
     uint24          length;
