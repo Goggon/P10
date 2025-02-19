@@ -1,0 +1,31 @@
+DTLSPlaintext {
+  ContentType     DTLSHandshake(22); ([00010110])
+  ProtocolVersion {254, 253};
+  uint16          epoch=0;
+  uint48          sequence_number=0;
+  uint16          lenght;
+  opaque          DTLSHandshake {
+    Handshaketype   server_hello;
+    uint24          length;
+    uint16          message_seq;
+    uint24          fragment_offset;
+    uint24          fragment_length;
+    ServerHello {
+      ProtocolVersion   {254, 253};
+      Random32          random;
+      opaque            legacy_session_id_echo=client_session_id;
+      CipherSuite       [(Name_of_ciphersuit, two_byte_id), ...];
+      uint8             legacy_compression_method = 0;
+      Extension [
+        ExtensionType     51; (For keyshare)
+        opaque [
+          KeyshareClientHello {
+            Namegroup       name_of_method;
+            opaque          [key_exchange, ...]
+          }
+        ]
+      ]
+    }
+  }
+};
+

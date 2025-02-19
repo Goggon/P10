@@ -1,0 +1,22 @@
+DTLSPlaintext {
+  ContentType     DecryptedDTLSHandshake(22); ([001* ****])
+  ProtocolVersion {254, 253};
+  uint16          epoch=2;
+  uint48          sequence_number=0;
+  uint16          lenght;
+  opaque          DTLSHandshake {
+    Handshaketype   certificate_request;
+    uint24          length;
+    uint16          message_seq;
+    uint24          fragment_offset;
+    uint24          fragment_length;
+    CertificateRequest {
+      opaque          []; (For non-post-handshake)
+      Extension [
+        ExtensionType signature_algorithms(13);
+        opaque        [data_for_the_extensiontype]
+      ]
+    }
+  }
+};
+

@@ -1,0 +1,20 @@
+DTLSPlaintext {
+  ContentType     DecryptedDTLSHandshake(22); ([001* ****])
+  ProtocolVersion {254, 253};
+  uint16          epoch=2;
+  uint48          sequence_number=0;
+  uint16          lenght;
+  opaque          DTLSHandshake {
+    Handshaketype   finished(20);
+    uint24          length;
+    uint16          message_seq;
+    uint24          fragment_offset;
+    uint24          fragment_length;
+    Finished {
+      opaque  verify_data=HMAC(HKDF-Expand-Label(BaseKey, "finished", "", Hash.length),
+                                Transcript-Hash(Handshake Context,
+                                                Certificate*, CertificateVerify*));
+    }
+  }
+};
+
