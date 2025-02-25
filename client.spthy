@@ -3,40 +3,98 @@
 //ClientHello
 rule ClientHello:
     let
-        clienthello = {/*ProtocolVersion*/ {254, 253}, /*Random32*/ {random}, /*legacy_session_id*/ [], /*legacy_cookie*/ [], /*CipherSuite*/ [{CipherSuite_name, two_byte_id}, ...], /*legacy_compression_method*/ [0], /*Extension*/ {/*ExtensionType*/ 51, /*KeyshareClientHello*/ {name_of_method, [key_exchange, ...]}}}
-        DTLSHandshake = {/*length*/ random, /*message_seq*/ 0, /*fragment_offset*/ 0, /*fragment_length*/ length, client_hello}
-        DTLSPlaintext = {/*epoch*/ 0, /*sequence_number*/ 0, /*length*/ DTLSHandshake length+x, DTLSHandshake}
+        clienthello = < /*ProtocolVersion*/ <254, 253>, 
+                        /*Random32*/ ~random, 
+                        /*legacy_session_id*/ [], 
+                        /*legacy_cookie*/ [], 
+                        /*CipherSuite*/ [{CipherSuite_name, two_byte_id}, ...], 
+                        /*legacy_compression_method*/ [0], 
+                        /*Extension*/ {
+                            /*ExtensionType*/ 51, 
+                            /*KeyshareClientHello*/ {name_of_method, [key_exchange, ...]}
+                        }
+                    >
+        DTLSHandshake = {
+                        /*length*/ random, 
+                        /*message_seq*/ 0, 
+                        /*fragment_offset*/ 0, 
+                        /*fragment_length*/ length, 
+                        client_hello
+                    }
+        DTLSPlaintext = {
+                        /*epoch*/ 0, 
+                        /*sequence_number*/ 0, 
+                        /*length*/ DTLSHandshake length+x, 
+                        DTLSHandshake
+                    }
     in
-    [  ]
-    --[  ]->
-    [Out(DTLSPlaintext, $C) /*clienthello plaintext*/]
+        [ Fr(~random) ]
+      --[  ]->
+        [ Out(DTLSPlaintext, $C) /*clienthello plaintext*/ ]
 
-//ClientHelloCookie
+//ClientHelloCookie 
 rule ClientHelloCookie:
     let
-        clienthello = {/*ProtocolVersion*/ {254, 253}, /*Random32*/ {random}, /*legacy_session_id*/ [], /*legacy_cookie*/ [], /*CipherSuite*/ [{CipherSuite_name, two_byte_id}], /*legacy_compression_method*/ [0], /*Extension*/ {/*ExtensionType*/ 51, /*KeyshareClientHello*/ {name_of_method, [key_exchange, ...]}, {/*ExtensionType*/ 44, /*Cookie*/ {cookie_that_depend_on_client_address}}}}
-        DTLSHandshake = {/*length*/ random, /*message_seq*/ 0, /*fragment_offset*/ 0, /*fragment_length*/ length, client_hello}
-        DTLSPlaintext = {/*epoch*/ 0, /*sequence_number*/ 2, /*length*/ DTLSHandshake length+x, DTLSHandshake}
+        clienthello = {
+                        /*ProtocolVersion*/ {254, 253}, 
+                        /*Random32*/ {random}, 
+                        /*legacy_session_id*/ [], 
+                        /*legacy_cookie*/ [], 
+                        /*CipherSuite*/ [{CipherSuite_name, two_byte_id}], 
+                        /*legacy_compression_method*/ [0], 
+                        /*Extension*/ {
+                            /*ExtensionType*/ 51, 
+                            /*KeyshareClientHello*/ {name_of_method, [key_exchange, ...]}, {/*ExtensionType*/ 44, /*Cookie*/ {cookie_that_depend_on_client_address}}}}
+        DTLSHandshake = {
+                        /*length*/ random, 
+                        /*message_seq*/ 0, 
+                        /*fragment_offset*/ 0, 
+                        /*fragment_length*/ length, 
+                        client_hello
+                    }
+        DTLSPlaintext = {
+                        /*epoch*/ 0, 
+                        /*sequence_number*/ 2, 
+                        /*length*/ DTLSHandshake length+x, 
+                        DTLSHandshake
+                    }
     in
-    [in(DTLSPlaintext, $S) /*helloretryrequest plaintext*/]
-    --[  ]->
-    [Out(DTLSPlaintext, $C) /*clienthellocokie plaintext*/]
+        [ in(DTLSPlaintext, $S) /*helloretryrequest plaintext*/ ]
+      --[  ]->
+        [ Out(DTLSPlaintext, $C) /*clienthellocokie plaintext*/ ]
 
 
 //ClientFinished
 rule ClientFinished:
     let
-        client_finished = {/*verify_data*/ HMAC(HKDF-Expand-Label(BaseKey, "finished", "", Hash.length))}
-        DTLSHandshake = {/*length*/ random, /*message_seq*/ 0, /*fragment_offset*/ 0, /*fragment_length*/ length, client_finished}
-        DTLSInnerPlaintext = {/*content*/ DTLSHandshake, /*zeros*/ [0], /*ContentType*/ 22}
-        DTLSCipherText = {/*unified_hdr*/ {/*first three bits*/ 001, /*C*/ Connection_id, /*S*/ 8, /*E*/ 2 /*2 fordi lige encrypted right?*/}, /*encrypted_record*/ DTLSInnerPlaintext}
+        client_finished = {
+                            /*verify_data*/ HMAC(HKDF-Expand-Label(BaseKey, "finished", "", Hash.length))
+                        }
+        DTLSHandshake = {
+                            /*length*/ random, 
+                            /*message_seq*/ 0, 
+                            /*fragment_offset*/ 0, 
+                            /*fragment_length*/ length, 
+                            client_finished
+                        }
+        DTLSInnerPlaintext = {
+                                /*content*/ DTLSHandshake, 
+                                /*zeros*/ [0], 
+                                /*ContentType*/ 22
+                            }
+        DTLSCipherText = {
+                            /*unified_hdr*/ {
+                                /*first three bits*/ 001, /*C*/ Connection_id, /*S*/ 8, /*E*/ 2 /*2 fordi lige encrypted right?*/
+                            }, 
+                            /*encrypted_record*/ DTLSInnerPlaintext
+                        }
         
     in
-    [In(DTLSPlaintext, $S) /*serverhello plaintext*/,
-    in(DTLSCipherText, $S) /*encrypted extensions*/,
-    in(DTLSCipherText, $S) /*server certificate*/,
-    in(DTLSCipherText, $S) /*server certificate verify*/,
-    in(DTLSCipherText, $S) /*server finished*/]
-    --[  ]->
-    [Out(DTLSCipherText, $C) /*client finished*/,
-     St_server_sends_client_finished($S, $C, 'Server sent client finished to client. Send server finished')]
+        [ In(DTLSPlaintext, $S) /*serverhello plaintext*/,
+          in(DTLSCipherText, $S) /*encrypted extensions*/,
+          in(DTLSCipherText, $S) /*server certificate*/,
+          in(DTLSCipherText, $S) /*server certificate verify*/,
+          in(DTLSCipherText, $S) /*server finished*/ ]
+      --[  ]->
+        [ Out(DTLSCipherText, $C) /*client finished*/,
+          St_server_sends_client_finished($S, $C, 'Server sent client finished to client. Send server finished')]
