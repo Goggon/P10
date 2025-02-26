@@ -93,7 +93,7 @@ rule ClientFinished:
                                   <
                                   /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'> //<- Expect epoch = 2 
                                   >, 
-                                  /*encrypted_record*/ <
+                                  /*encrypted_record*/ senc{<
                                     /*content*/ <
                                       /*length*/ rec_EELength, 
                                       /*message_seq*/ '0', 
@@ -108,14 +108,14 @@ rule ClientFinished:
                                     >, 
                                     /*zeros*/ <'0'>, 
                                     /*ContentType*/ '22'
-                                  >
+                                  >}traffic_key
                                 >
 
         ServerDTLSCipherTextSC = <
                                   /*unified_hdr*/ <
                                     /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*L*/ '1', /*S*/ '1', /*E*/ <'1','0'>
                                   >, 
-                                  /*encrypted_record*/ <
+                                  /*encrypted_record*/ senc{<
                                     /*content*/ <
                                       /*length*/ rec_SCMessageLength, 
                                       /*message_seq*/ '1', 
@@ -127,13 +127,13 @@ rule ClientFinished:
                                     >, 
                                     /*zeros*/ <'0'>, 
                                     /*ContentType*/ '22'
-                                  >
+                                  >}traffic_key
                                 >
           ServerDTLSCipherTextSCV = <
                                       /*unified_hdr*/ <
                                         /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'>
                                       >, 
-                                      /*encrypted_record*/ <
+                                      /*encrypted_record*/ senc{<
                                         /*content*/ <
                                           /*length*/ rec_SCVMessageLength, 
                                           /*message_seq*/ 2, 
@@ -146,13 +146,13 @@ rule ClientFinished:
                                         >, 
                                         /*zeros*/ <'0'>, 
                                         /*ContentType*/ '22'
-                                      >
+                                      >}traffic_key
                                     >
             ServerDTLSCipherTextSF = <
                                       /*unified_hdr*/ <
                                         /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'>
                                       >, 
-                                      /*encrypted_record*/ <
+                                      /*encrypted_record*/ senc{<
                                         /*content*/ <
                                           /*length*/ rec_SFMessageLength, 
                                           /*message_seq*/ 3, 
@@ -164,7 +164,7 @@ rule ClientFinished:
                                         >, 
                                         /*zeros*/ <'0'>, 
                                         /*ContentType*/ '22'
-                                      >
+                                      >}traffic_key
                                     >
     in
         [ St_ClientHello($C, $S, random, a),

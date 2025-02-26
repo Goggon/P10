@@ -82,11 +82,11 @@ rule EncryptedExtensions:
                             encrypted_extensions
                         >
 
-        DTLSInnerPlaintext = <
+        DTLSInnerPlaintext = senc{<
                                 /*content*/ DTLSHandshake, 
                                 /*zeros*/ <'0'>, 
                                 /*ContentType*/ '22'
-                            >
+                            >}traffic_key
 
         DTLSCipherText = </*unified_hdr*/ 
                             <
@@ -116,11 +116,11 @@ rule ServerCertificate:
                         /*fragment_length*/ '2000', 
                         server_certificate
                         >
-        DTLSInnerPlaintext = <
+        DTLSInnerPlaintext = senc{<
                                 /*content*/ DTLSHandshake, 
                                 /*zeros*/ <'0'>, 
                                 /*ContentType*/ '22'
-                            >
+                            >}traffic_key
 
         DTLSCipherText = <
                             /*unified_hdr*/ <
@@ -151,11 +151,11 @@ rule CertificateVerify:
                             /*fragment_length*/ '500', 
                             certificate_verify
                         >
-        DTLSInnerPlaintext = <
+        DTLSInnerPlaintext = senc{<
                                 /*content*/ DTLSHandshake, 
                                 /*zeros*/ <'0'>, 
                                 /*ContentType*/ '22'
-                            >
+                            >}traffic_key
 
         DTLSCipherText = <
                             /*unified_hdr*/ <
@@ -186,11 +186,11 @@ rule ServerFinished:
                             /*fragment_length*/ '400', 
                             server_finished
                         >
-        DTLSInnerPlaintext = <
+        DTLSInnerPlaintext = senc{<
                                 /*content*/ DTLSHandshake, 
                                 /*zeros*/ <'0'>, 
                                 /*ContentType*/ '22'
-                            >
+                            >}traffic_key
         DTLSCipherText = <
                             /*unified_hdr*/ <
                                 /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*E*/ <'1','0'>
