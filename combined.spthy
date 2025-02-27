@@ -3,7 +3,8 @@ begin
 
 builtins: hashing, symmetric-encryption, diffie-hellman, asymmetric-encryption, signing
 
-functions: HKDF/1, HKDFExpand/1, HKDFExpand1/1, HKDFExpand2/1, hmac/1, mac/1, checksign/2
+//predicates: DH(g, gx) <=> Ex x. g^x = gx
+//functions: HKDF/1, HKDFExpand/1, HKDFExpand1/1, HKDFExpand2/1, hmac/1, mac/1, checksign/2
 
 
 rule ClientHello:
@@ -34,11 +35,11 @@ rule ClientHello:
     in
         [ Fr(~random),
           Fr(~a) ]
-      --[  ]->
-        [ Out(<DTLSPlaintext, $C>) /*clienthello plaintext*/,
+      --[ ]->
+        [ Out(<DTLSPlaintext, $C, $S>) /*clienthello plaintext*/,
           St_ClientHello($C, $S, ~random, ~a) ]
 
-          // ServerHello
+// ServerHello
 rule ServerHello:
 let
     serverhello = <
@@ -91,10 +92,11 @@ let
 in
     [ Fr(~b),
       Fr(~random),
-      In(<ClientDTLSPlaintext, $C>) /*clienthellocookie plaintext*/ ]
-  --[  ]->
-    [ Out(<DTLSPlaintext, $S>) /*serverhello plaintext*/,
-      St_server_sends_hello($S, $C, ga^~b, 'Server_sent_hello_to_client_Send_encrypted_extensions') ]
+      In(<ClientDTLSPlaintext, $C, $C>) /*clienthellocookie plaintext*/ ]
+  --[ Neq('g', ga) ]->
+    [ Out(<DTLSPlaintext, $S, $C>) /*serverhello plaintext*/,
+      St_server_sends_hello($S, $C, ga^~b, ~random, rec_clientRandom, 'Server_sent_hello_to_client_Send_encrypted_extensions'),
+      Keys('g'^~b, ga) ]
 
 
 // EncryptedExtensions
@@ -129,10 +131,10 @@ let
                     >
     
 in
-  [ St_server_sends_hello($S, $C, traffic_key, 'Server_sent_hello_to_client_Send_encrypted_extensions') ]
+  [ St_server_sends_hello($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_hello_to_client_Send_encrypted_extensions') ]
 --[  ]->
-  [ Out(<DTLSCipherText, $S>) /*encrypted extensions*/,
-    St_server_sends_encrypted_extensions($S, $C, traffic_key, 'Server_sent_encrypted_extensions_to_client_Send_certificate_request') ]
+  [ Out(<DTLSCipherText, $S, $C>) /*encrypted extensions*/,
+    St_server_sends_encrypted_extensions($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_encrypted_extensions_to_client_Send_certificate_request') ]
 
 
 // ServerCertificate
@@ -163,10 +165,10 @@ let
                     >
     
 in
-    [ St_server_sends_encrypted_extensions($S, $C, traffic_key, 'Server_sent_encrypted_extensions_to_client_Send_certificate_request') ]
+    [ St_server_sends_encrypted_extensions($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_encrypted_extensions_to_client_Send_certificate_request') ]
   --[  ]->
-    [ Out(<DTLSCipherText, $S>) /*server certificate*/,
-      St_server_sends_server_certificate($S, $C, traffic_key, 'Server_sent_server_certificate_to_client_Send_server_certificate_verify') ]
+    [ Out(<DTLSCipherText, $S, $C>) /*server certificate*/,
+      St_server_sends_server_certificate($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_server_certificate_to_client_Send_server_certificate_verify') ]
 
 
 // CertificateVerify
@@ -198,10 +200,10 @@ let
                     >
     
 in
-[St_server_sends_server_certificate($S, $C, traffic_key, 'Server_sent_server_certificate_to_client_Send_server_certificate_verify')]
+[St_server_sends_server_certificate($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_server_certificate_to_client_Send_server_certificate_verify')]
 --[  ]->
-[Out(<DTLSCipherText, $S>) /*certificate verify*/,
- St_server_sends_certificate_verify($S, $C, traffic_key, 'Server_sent_certificate_verify_to_client_Send_server_finished')]
+[Out(<DTLSCipherText, $S, $C>) /*certificate verify*/,
+ St_server_sends_certificate_verify($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_certificate_verify_to_client_Send_server_finished')]
 
 
 // ServerFinished
@@ -232,9 +234,10 @@ let
                     >
     
 in
-    [ St_server_sends_certificate_verify($S, $C, traffic_key, 'Server_sent_certificate_verify_to_client_Send_server_finished') ]
-  --[  ]->
-    [ Out(<DTLSCipherText, $S>) /*server finished*/ ]
+    [ St_server_sends_certificate_verify($S, $C, traffic_key, random, rec_clientRandom, 'Server_sent_certificate_verify_to_client_Send_server_finished'),
+      Keys(gb, ga) ]
+  --[ FinishedS($S, $C, gb, ga, traffic_key) ]->
+    [ Out(<DTLSCipherText, $S, $C>) /*server finished*/ ]
     
 
 //ClientFinished
@@ -366,12 +369,33 @@ rule ClientFinished:
                                     >
     in
         [ St_ClientHello($C, $S, random, a),
-          In(<ServerDTLSPlaintext, $S>) /*serverhello plaintext*/,
-          In(<ServerDTLSCipherTextEE, $S>) /*encrypted extensions*/,
-          In(<ServerDTLSCipherTextSC, $S>) /*server certificate*/,
-          In(<ServerDTLSCipherTextSCV, $S>) /*server certificate verify*/,
-          In(<ServerDTLSCipherTextSF, $S>) /*server finished*/ ]
-      --[  ]->
-        [ Out(<DTLSCipherText, $C>) /*client finished*/]
+          In(<ServerDTLSPlaintext, $S, $C>) /*serverhello plaintext*/,
+          In(<ServerDTLSCipherTextEE, $S, $C>) /*encrypted extensions*/,
+          In(<ServerDTLSCipherTextSC, $S, $C>) /*server certificate*/,
+          In(<ServerDTLSCipherTextSCV, $S, $C>) /*server certificate verify*/,
+          In(<ServerDTLSCipherTextSF, $S, $C>) /*server finished*/ ]
+      --[ FinishedC($C, $S, 'g'^a, gb, traffic_key),
+          Neq('g', gb) ]->
+        [ /*Out(<DTLSCipherText, $C>)*/ /*client finished*/]
+
+/*
+restriction DH_in_group:
+"
+  All g gx #i.
+  CheckDHInGroup(g, gx) @ #i ==> DH(g, gx)
+"
+*/
+
+restriction Not_equal:
+"
+  All x y #i.
+  Neq(x, y) @ #i ==> not(x = y)
+"
+
+lemma Establishing_the_same_session_keys:
+"
+  All C S gc gs keyC keyS #i #j.
+    FinishedC(C, S, gc, gs, keyC) @ #i & FinishedS(S, C, gs, gc, keyS) @ #j ==>  keyC = keyS
+"
 
 end
