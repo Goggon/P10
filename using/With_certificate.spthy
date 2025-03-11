@@ -1,7 +1,7 @@
 theory handshake
 begin
 
-builtins: hashing, diffie-hellman, symmetric-encryption, asymmetric-encryption
+builtins: hashing, diffie-hellman, symmetric-encryption, asymmetric-encryption, signing
 
 functions: HKDFExpand/1, hmac/1, h1/1
 
@@ -165,7 +165,7 @@ let
     certificate_verify = 
     <
       /*algorithm*/ $alg, 
-      /*signature*/ aenc{hmac(<h1(<ClientDTLSHandshake, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>)}serverPrivateKey
+      /*signature*/ sign(hmac(<h1(<ClientDTLSHandshake, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>), serverPrivateKey)
     >
 
     DTLSHandshakeCV = 
@@ -218,7 +218,7 @@ let
     
 in
     [ !Ltk($S, serverPrivateKey),
-      In(<ClientDTLSPlaintext, $C, $C>) /*clienthello plaintext*/,
+      In(<ClientDTLSPlaintext, $C, $S>) /*clienthello plaintext*/,
       Fr(~b),
       Fr(~srandom),
       Fr(~session_id) ]
@@ -233,7 +233,7 @@ in
       Out(<DTLSCipherTextSC, $S, $C>) /*servercertificate encrypted*/,
       Out(<DTLSCipherTextCV, $S, $C>) /*servercertificateverify encrypted*/,
       Out(<DTLSCipherTextSF, $S, $C>) /*server finished*/,
-      Keys(<$S, $C, 'g'^~b, ga, ga^~b>),
+      Keys(<$S, $C, ~session_id, 'g'^~b, ga, ga^~b>),
       ServerFinished(<$S, $C, server_finished, ~session_id>),
       DHExp(~b, ~session_id, $S) ]
     
@@ -324,10 +324,6 @@ rule ClientFinished:
     /******************************/
 
     /********** INCOMMING: SERVERCERTIFICATEVERIFY **********/
-    unsigedServerSignature = adec{serverSignature}serverPublicKey
-    
-    //unsigedServerSignature = hmac(<h1(<DTLSHandshake_CH, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>)
-
     certificate_verify = 
     <
       /*algorithm*/ $alg, 
@@ -384,7 +380,7 @@ rule ClientFinished:
         /*content*/ <
           client_finished
         >, 
-        /*zeros*/ <'0'>, 
+        /*zeros*/ <'0', '0'>, 
         /*ContentType*/ '22'
         >
     DTLSCipherText =  
@@ -402,17 +398,14 @@ rule ClientFinished:
       In(<DTLSCipherTextCV, $S, $C>) /*servercertificateverify encrypted*/,
       In(<ServerDTLSCipherTextSF, $S, $C>), /*server finished*/
       ClientSessionHandshakeHistory(<$C, $S, <DTLSHandshake_CH>>) ]
-  --[ HandshakeComplete($C, $S, session_id, traffic_key),
+  --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key),
       Neq('g', gb),
       Neq(gb, traffic_key), /* Ensure gb is not DH_Neutral */
       Eq(client_finished, serverFinish),
-      //Eq(unsigedServerSignature, hmac(<h1(<DTLSHandshake_CH, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>)), 
-      //hmac(<h1(<ClientDTLSHandshake, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>)
+      Eq(verify(serverSignature, hmac(<h1(<DTLSHandshake_CH, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>), serverPublicKey), true),
       Send($C, $S, 'CF', session_id)/*,
       DHChan($S, 'server', session_id, 'g', a, 'g'^a, gb, traffic_key)*/ ]->
-    [ Out(<DTLSCipherText, $C, $S>) /*client finished*/,
-      Out(unsigedServerSignature),
-      Out(hmac(<h1(<DTLSHandshake_CH, DTLSHandshakeSH, DTLSHandshakeEE, DTLSHandshakeSC>), 'serverCert'>))]
+    [ Out(<DTLSCipherText, $C, $S>) /*client finished*/ ]
 
 rule Ack:
   let
@@ -422,16 +415,16 @@ rule Ack:
                         /*content*/ <
                           client_finished
                         >, 
-                        /*zeros*/ <'0'>, 
+                        /*zeros*/ <'0', '0'>, 
                         /*ContentType*/ '22'
                       >, traffic_key)
                     >
   in
     [ In(<DTLSCipherText, $C, $S>),
-      Keys(<$S, $C, gb, ga, traffic_key>),
+      Keys(<$S, $C, session_id, gb, ga, traffic_key>),
       ServerFinished(<$S, $C, server_finished, session_id>) ]
   --[ Eq(client_finished, server_finished),
-      HandshakeComplete($S, $C, session_id, traffic_key),
+      HandshakeComplete($S, $C, 'server', session_id, traffic_key),
       Send($S, $C, 'ACK', session_id) ]->
     []
 
@@ -473,19 +466,20 @@ restriction DEBUG_Only_one_session_client:
     Start(a1, a2, 'client', sid1) @ i & Start(a3, a4, 'client', sid2) @ j ==> #i = #j
 "
 
-restriction DEBUG_Only_one_session_server:
+
+/*restriction DEBUG_Only_one_session_server:
 "
   All a1 a2 a3 a4 sid1 sid2 #i #j. 
     Start(a1, a2, 'server', sid1) @ i & Start(a3, a4, 'server', sid2) @ j ==> #i = #j
-"
+"*/
 
 /* If two session has been started, then the first session must have been complete before the new one start   */
-/*restriction R1_Only_one_session_per_pair_at_a_time:
+restriction R1_Only_one_session_per_pair_at_a_time:
 "
   All actor1 actor2 role session_id1 session_id2 #i #j.
     Start(actor1, actor2, role, session_id1) @ i & Start(actor1, actor2, role, session_id2) @ j & i < j
-      ==> Ex traffic_key #k. HandshakeComplete(actor1, actor2, session_id1, traffic_key) @ k & k < j & i < k
-"*/ 
+      ==> Ex traffic_key #k. HandshakeComplete(actor1, actor2, role, session_id1, traffic_key) @ k & k < j & i < k
+"
 
 /* Actors may not start a session with them self */
 restriction R2_Dont_essablish_session_with_self:
@@ -502,14 +496,43 @@ restriction R3_Dont_resend_messages:
 "
 
 // Reachability lemma
-lemma L1_reachability_with_both_actors:
+lemma L1_Reachability_with_both_actors:
   exists-trace
   "Ex C S client_session_id server_session_id traffic_key #i #j #k #l. 
     Start(C, S, 'client', client_session_id) @ i & Start(S, C, 'server', server_session_id) @ j
-    & HandshakeComplete(C, S, client_session_id, traffic_key) @ k & HandshakeComplete(S, C, server_session_id, traffic_key) @ l
+    & HandshakeComplete(C, S, 'client', client_session_id, traffic_key) @ k & HandshakeComplete(S, C, 'server', server_session_id, traffic_key) @ l
     & not(Ex #p. Corrupt(C) @ p) 
     & not(Ex #q. Corrupt(S) @ q)
     & not(Ex #r. K(traffic_key) @ r)
   "
+
+// ISSUE: The adversary can change the identifiers and troll the server
+/*
+lemma L2_Establishing_the_same_session_keys:
+"
+  All C S client_session_id server_session_id keyC keyS #i #j.
+    HandshakeComplete(C, S, 'client', client_session_id, keyC) @ #i 
+    & HandshakeComplete(S, C, 'server', server_session_id, keyS) @ #j
+    & not(Ex #p. Corrupt(C) @ p) 
+    & not(Ex #q. Corrupt(S) @ q)
+      ==> keyC = keyS
+"*/
+
+lemma L3_Session_key_secrecy:
+"
+  All C S session_id key #i #j.
+    HandshakeComplete(C, S, 'client', session_id, key) @ i & K(key) @ j
+     ==>
+       (Ex #p. Corrupt(C) @ p)
+     | (Ex #q. Corrupt(S) @ q)
+"
+
+lemma L4_Unique_session_keys:
+"
+  All actor1 actor2 peer1 peer2 role1 role2 key session_id1 session_id2 #i #j.
+    HandshakeComplete(actor1, peer1, role1, session_id1, key) @ i & HandshakeComplete(actor2, peer2, role2, session_id2, key) @ j
+      ==>
+        #i = #j
+"
 
 end
