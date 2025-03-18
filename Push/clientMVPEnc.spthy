@@ -1,0 +1,179 @@
+theory handshake
+begin
+
+builtins: hashing, symmetric-encryption, diffie-hellman, asymmetric-encryption, signing
+
+functions: HKDF/1, HKDFExpand/1, HKDFExpand1/1, HKDFExpand2/1, hmac/1, mac/1, checksign/2
+
+
+rule ClientHello:
+    let
+        clienthello = < /*ProtocolVersion*/ <'254', '253'>, 
+                        /*Random32*/ ~random, 
+                        /*CipherSuite*/ $CipherSuits, 
+                        /*Extension*/ <
+                          /*ExtensionType*/ '51', 
+                          /*KeyshareClientHello*/ <
+                            /*KeyshareEntry*/ <'g', 'g'^~a>
+                          >
+                        >
+                      >
+        DTLSHandshake = <
+                          /*length*/ '200',
+                          /*message_seq*/ '0', 
+                          /*fragment_offset*/ '0', 
+                          /*fragment_length*/ '200', 
+                          clienthello
+                        >
+        DTLSPlaintext = <
+                          /*epoch*/ '0', 
+                          /*sequence_number*/ '0', 
+                          /*length*/ '210', 
+                          DTLSHandshake
+                        >
+    in
+        [ Fr(~random),
+          Fr(~a) ]
+      --[  ]->
+        [ Out(<DTLSPlaintext, $C>) /*clienthello plaintext*/,
+          St_ClientHello($C, $S, ~random, ~a) ]
+
+
+//ClientFinished
+rule ClientFinished:
+    let
+        traffic_key = gb^a
+        client_finished = <
+                            /*verify_data*/ traffic_key /*TODO*/ //HMAC(HKDF-Expand-Label(BaseKey, "finished", "", Hash.length))
+                          >
+
+        DTLSHandshake = <
+                          /*length*/ '300', 
+                          /*message_seq*/ '4', 
+                          /*fragment_offset*/ '0', 
+                          /*fragment_length*/ '300', 
+                          client_finished
+                        >
+
+        DTLSInnerPlaintext = <
+                                /*content*/ DTLSHandshake, 
+                                /*zeros*/ <'0'>, 
+                                /*ContentType*/ '22'
+                            >
+        DTLSCipherText =  <
+                            /*unified_hdr*/ <
+                              /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*E*/ <'1','0'>
+                            >, 
+                            /*encrypted_record*/ DTLSInnerPlaintext
+                          >
+
+        /* INCOMMING MESSAGE */
+        ServerDTLSPlaintext = <
+                                /*epoch*/ '0', 
+                                /*sequence_number*/ '0', 
+                                /*length*/ rec_SHRecordLength, 
+                                <
+                                  /*length*/ rec_SHMessageLength, 
+                                  /*message_seq*/ '0', 
+                                  /*fragment_offset*/ rec_SHfragmentOffset, 
+                                  /*fragment_length*/ rec_SHfragmentLength, 
+                                  <
+                                    /*ProtocolVersion*/ <'254', '253'>, 
+                                    /*Random32*/ rec_serverRandom, 
+                                    /*CipherSuite*/ $CipherSuits, 
+                                    /*Extension*/ <
+                                      /*ExtensionType*/ '51', 
+                                      /*KeyshareServerHello*/ <'g', gb>
+                                    >
+                                  >
+                                >
+                              >
+
+        ServerDTLSCipherTextEE = </*unified_hdr*/ 
+                                  <
+                                  /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'> //<- Expect epoch = 2 
+                                  >, 
+                                  /*encrypted_record*/ senc{<
+                                    /*content*/ <
+                                      /*length*/ rec_EELength, 
+                                      /*message_seq*/ '0', 
+                                      /*fragment_offset*/ rec_EEFragmentOffset, 
+                                      /*fragment_length*/ rec_EEFragmentLength, 
+                                      <
+                                        /*Extension*/ <
+                                            /*ExtensionType*/ '13', 
+                                            /*EncryptedExtensions*/ $EncryptedExtensions
+                                        >
+                                      >
+                                    >, 
+                                    /*zeros*/ <'0'>, 
+                                    /*ContentType*/ '22'
+                                  >}traffic_key
+                                >
+
+        ServerDTLSCipherTextSC = <
+                                  /*unified_hdr*/ <
+                                    /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*L*/ '1', /*S*/ '1', /*E*/ <'1','0'>
+                                  >, 
+                                  /*encrypted_record*/ senc{<
+                                    /*content*/ <
+                                      /*length*/ rec_SCMessageLength, 
+                                      /*message_seq*/ '1', 
+                                      /*fragment_offset*/ rec_SCFragmentOffset, 
+                                      /*fragment_length*/ rec_SCFragmentLength, 
+                                      <
+                                        /*certificate_entry*/ $ServerCert
+                                      >
+                                    >, 
+                                    /*zeros*/ <'0'>, 
+                                    /*ContentType*/ '22'
+                                  >}traffic_key
+                                >
+          ServerDTLSCipherTextSCV = <
+                                      /*unified_hdr*/ <
+                                        /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'>
+                                      >, 
+                                      /*encrypted_record*/ senc{<
+                                        /*content*/ <
+                                          /*length*/ rec_SCVMessageLength, 
+                                          /*message_seq*/ 2, 
+                                          /*fragment_offset*/ rec_SCVFragmentOffset, 
+                                          /*fragment_length*/ rec_SCVFragmentLength, 
+                                          <
+                                            /*algorithm*/ $alg, 
+                                            /*signature*/ signature /* TODO */
+                                          >
+                                        >, 
+                                        /*zeros*/ <'0'>, 
+                                        /*ContentType*/ '22'
+                                      >}traffic_key
+                                    >
+            ServerDTLSCipherTextSF = <
+                                      /*unified_hdr*/ <
+                                        /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'>
+                                      >, 
+                                      /*encrypted_record*/ senc{<
+                                        /*content*/ <
+                                          /*length*/ rec_SFMessageLength, 
+                                          /*message_seq*/ 3, 
+                                          /*fragment_offset*/ rec_SFFragmentOffset, 
+                                          /*fragment_length*/ rec_SFFragmentLength, 
+                                          <
+                                            /*verify_data*/ serverFinish
+                                          >
+                                        >, 
+                                        /*zeros*/ <'0'>, 
+                                        /*ContentType*/ '22'
+                                      >}traffic_key
+                                    >
+    in
+        [ St_ClientHello($C, $S, random, a),
+          In(<ServerDTLSPlaintext, $S>) /*serverhello plaintext*/,
+          In(<ServerDTLSCipherTextEE, $S>) /*encrypted extensions*/,
+          In(<ServerDTLSCipherTextSC, $S>) /*server certificate*/,
+          In(<ServerDTLSCipherTextSCV, $S>) /*server certificate verify*/,
+          In(<ServerDTLSCipherTextSF, $S>) /*server finished*/ ]
+      --[  ]->
+        [ Out(<DTLSCipherText, $C>) /*client finished*/]
+
+end

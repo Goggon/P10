@@ -1,0 +1,208 @@
+theory handshake
+begin
+
+builtins: hashing, symmetric-encryption, diffie-hellman, asymmetric-encryption, signing
+
+functions: HKDF/1, HKDFExpand/1, HKDFExpand1/1, HKDFExpand2/1, hmac/1, mac/1, checksign/2
+
+// ServerHello
+rule ServerHello:
+    let
+        serverhello = <
+                        /*ProtocolVersion*/ <'254', '253'>, 
+                        /*Random32*/ ~random, 
+                        /*CipherSuite*/ $CipherSuits, 
+                        /*Extension*/ <
+                            /*ExtensionType*/ '51', 
+                            /*KeyshareServerHello*/ <'g', 'g'^~b>
+                        >
+                    >
+        DTLSHandshake = <
+                        /*length*/ '200', 
+                        /*message_seq*/ '0', 
+                        /*fragment_offset*/ '0', 
+                        /*fragment_length*/ '200', 
+                        serverhello
+                    >
+
+        DTLSPlaintext = <
+                        /*epoch*/ '0', 
+                        /*sequence_number*/ '0', 
+                        /*length*/ '210', 
+                        DTLSHandshake
+                    >
+
+        ClientDTLSPlaintext = <
+                                /*epoch*/ '0', 
+                                /*sequence_number*/ '0', 
+                                /*length*/ rec_recordLength, 
+                                <
+                                    /*length*/ rec_messageLength, 
+                                    /*message_seq*/ '0', 
+                                    /*fragment_offset*/ rec_fragmentOffset, 
+                                    /*fragment_length*/ rec_fragmentLength, 
+                                    <
+                                        /*ProtocolVersion*/ <'254', '253'>, 
+                                        /*Random32*/ rec_clientRandom, 
+                                        /*CipherSuite*/ $CipherSuits, 
+                                        /*Extension*/ <
+                                            <
+                                                /*ExtensionType*/ '51', 
+                                                /*KeyshareClientHello*/ <'g', ga>
+                                            >
+                                        >
+                                    >
+                                >
+                            >
+        
+    in
+        [ Fr(~b),
+          Fr(~random),
+          In(<ClientDTLSPlaintext, $C>) /*clienthellocookie plaintext*/ ]
+      --[  ]->
+        [ Out(<DTLSPlaintext, $S>) /*serverhello plaintext*/,
+          St_server_sends_hello($S, $C, ga^~b, 'Server_sent_hello_to_client_Send_encrypted_extensions') ]
+
+
+// EncryptedExtensions
+rule EncryptedExtensions:
+    let
+        encrypted_extensions = <
+                                /*Extension*/ <
+                                    /*ExtensionType*/ '13', 
+                                    /*EncryptedExtensions*/ $EncryptedExtensions
+                                >
+                              >
+
+        DTLSHandshake = <
+                            /*length*/ '400', 
+                            /*message_seq*/ '0', 
+                            /*fragment_offset*/ '0', 
+                            /*fragment_length*/ '400', 
+                            encrypted_extensions
+                        >
+
+        DTLSInnerPlaintext = senc{<
+                                /*content*/ DTLSHandshake, 
+                                /*zeros*/ <'0'>, 
+                                /*ContentType*/ '22'
+                            >}traffic_key
+
+        DTLSCipherText = </*unified_hdr*/ 
+                            <
+                              /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'> 
+                            >, 
+                            /*encrypted_record*/ DTLSInnerPlaintext
+                        >
+        
+    in
+      [ St_server_sends_hello($S, $C, traffic_key, 'Server_sent_hello_to_client_Send_encrypted_extensions') ]
+    --[  ]->
+      [ Out(<DTLSCipherText, $S>) /*encrypted extensions*/,
+        St_server_sends_encrypted_extensions($S, $C, traffic_key, 'Server_sent_encrypted_extensions_to_client_Send_certificate_request') ]
+
+
+// ServerCertificate
+rule ServerCertificate:
+    let
+        server_certificate = <
+                                /*certificate_entry*/ $ServerCert
+                            >
+
+        DTLSHandshake = <
+                        /*length*/ '2000', 
+                        /*message_seq*/ '1', 
+                        /*fragment_offset*/ '0', 
+                        /*fragment_length*/ '2000', 
+                        server_certificate
+                        >
+        DTLSInnerPlaintext = senc{<
+                                /*content*/ DTLSHandshake, 
+                                /*zeros*/ <'0'>, 
+                                /*ContentType*/ '22'
+                            >}traffic_key
+
+        DTLSCipherText = <
+                            /*unified_hdr*/ <
+                                /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*L*/ '1', /*S*/ '1', /*E*/ <'1','0'>
+                            >, 
+                            /*encrypted_record*/ DTLSInnerPlaintext
+                        >
+        
+    in
+        [ St_server_sends_encrypted_extensions($S, $C, traffic_key, 'Server_sent_encrypted_extensions_to_client_Send_certificate_request') ]
+      --[  ]->
+        [ Out(<DTLSCipherText, $S>) /*server certificate*/,
+          St_server_sends_server_certificate($S, $C, traffic_key, 'Server_sent_server_certificate_to_client_Send_server_certificate_verify') ]
+
+
+// CertificateVerify
+rule CertificateVerify:
+    let
+        certificate_verify = <
+                                /*algorithm*/ $alg, 
+                                /*signature*/ $signature //Transcript-Hash(Handshake Context, Certificate) /* TODO */
+                            >
+
+        DTLSHandshake = <
+                            /*length*/ '500', 
+                            /*message_seq*/ '2', 
+                            /*fragment_offset*/ '0', 
+                            /*fragment_length*/ '500', 
+                            certificate_verify
+                        >
+        DTLSInnerPlaintext = senc{<
+                                /*content*/ DTLSHandshake, 
+                                /*zeros*/ <'0'>, 
+                                /*ContentType*/ '22'
+                            >}traffic_key
+
+        DTLSCipherText = <
+                            /*unified_hdr*/ <
+                                /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'>
+                            >, 
+                            /*encrypted_record*/ DTLSInnerPlaintext
+                        >
+        
+    in
+    [St_server_sends_server_certificate($S, $C, traffic_key, 'Server_sent_server_certificate_to_client_Send_server_certificate_verify')]
+    --[  ]->
+    [Out(<DTLSCipherText, $S>) /*certificate verify*/,
+     St_server_sends_certificate_verify($S, $C, traffic_key, 'Server_sent_certificate_verify_to_client_Send_server_finished')]
+
+
+// ServerFinished
+rule ServerFinished:
+    let
+        server_finished = <
+                            /*verify_data*/ traffic_key /*TODO */ /*HMAC(HKDF-Expand-Label(
+                                                                    Transcript-Hash(Handshake Context, ServerCertificate), "finished", "", 12), 
+                                                                    Transcript-Hash(Handshake Context, CertificateVerify))*/
+                        >
+        DTLSHandshake = <
+                            /*length*/ '400', 
+                            /*message_seq*/ '0', 
+                            /*fragment_offset*/ '0', 
+                            /*fragment_length*/ '400', 
+                            server_finished
+                        >
+        DTLSInnerPlaintext = senc{<
+                                /*content*/ DTLSHandshake, 
+                                /*zeros*/ <'0'>, 
+                                /*ContentType*/ '22'
+                            >}traffic_key
+        DTLSCipherText = <
+                            /*unified_hdr*/ <
+                                /*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*E*/ <'1','0'>
+                            >, 
+                            /*encrypted_record*/ DTLSInnerPlaintext
+                        >
+        
+    in
+        [ St_server_sends_certificate_verify($S, $C, traffic_key, 'Server_sent_certificate_verify_to_client_Send_server_finished') ]
+      --[  ]->
+        [ Out(<DTLSCipherText, $S>) /*server finished*/ ]
+
+
+
+end
