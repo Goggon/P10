@@ -1,0 +1,20 @@
+// lemma CH_before_CHC:
+//     /*ClientHello must occur before ClientHello+Cookie, and it must contain the exact same (aside from the new cookie of course)*/
+
+// lemma HRR_before_CHC:
+//     /*HelloRetryRequest must occur before ClientHello+Cookie, and the cookie in the latter must match the cookie provided in HRR*/
+
+// lemma CR_before_CC:
+//     /*CertificateRequest must be received before Client sends Certificate, and the certificate_context must match the request*/
+
+// lemma CC_forced_by_CR:
+//     /*If CertificateRequest is received, then Client must send Certificate*/
+
+// lemma SC_before_SF_and_after_SH:
+//     /*ServerCertificate must be sent before ServerFinished and after ServerHello*/
+
+// lemma EE_only_contains_existing_encryptions:
+//     /*EncryptedExtensions must only contain encryptions that have been previously negotiated*/
+
+// lemma trace_in_Ack_must_be_real:
+//     /*The trace in Ack must be a real trace*/
