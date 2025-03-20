@@ -1106,10 +1106,10 @@ All C S session_id key nonce #i #j.
 lemma SC_before_SF_and_after_SH:
   "
   All C S session_id #i.
-    Send(S, C, 'SC', session_id) @ i
+    Send(S, C, 'SF', session_id) @ i
     ==>
-      Ex #j. Send(S, C, 'SH', session_id) @ j & #j < #i
-      & Ex #k. Send(S, C, 'SF', session_id) @ k & #i < #k
+      (Ex #j #k. Send(S, C, 'SH', session_id) @ j & #j < #i
+      & Send(S, C, 'C', session_id) @ k & #k < #i & #j < #k)
   "
 
 
