@@ -1103,5 +1103,15 @@ All C S session_id key nonce #i #j.
   ==>
     not((Ex #k. K(key) @ k))
 "
+lemma SC_before_SF_and_after_SH:
+  "
+  All C S session_id #i.
+    Send(S, C, 'SF', session_id) @ i
+    ==>
+      (Ex #j #k. Send(S, C, 'SH', session_id) @ j & #j < #i
+      & Send(S, C, 'C', session_id) @ k & #k < #i & #j < #k)
+  "
+
+
 
 end
