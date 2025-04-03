@@ -112,13 +112,13 @@ rule HelloRetryRequest:
     HelloRetryRequest = 
       <
         /*ProtocolVersion*/ protocolVersion(), 
-        /*Random32*/        ~srandom,
+        /*Random32*/        'HelloRetryRequest',
         /*CipherSuite*/     'CipherSuits',
         /*Extension*/ <
           /*ExtensionType*/     '44', //(For cookie)
           <
             /*Cookie*/ <
-              h1(<<'1', ClientHello>, ~srandom>)
+              h1(<<'1', ClientHello>, 'HelloRetryRequest'>)
             >
           >
         >
@@ -144,7 +144,7 @@ rule HelloRetryRequest:
         Fr(~msg_len),
         S_In(<ClientDTLSPlaintext, $C, $S>) /*clienthello plaintext*/ ]
     --[ Send($S, $C, 'HRR', ~session_id), Reach('HRR') ]->
-      [ Cookie($S, $C, h1(<<'1', ClientHello>, ~srandom>)),
+      [ Cookie($S, $C, h1(<<'1', ClientHello>, 'HelloRetryRequest'>)),
         St_ServerHelloRetry($S, $C, ~srandom, ~session_id),
         ServerSessionHandshakeHistory($S, $C, <h1(<'1', ClientHello>), <'2', HelloRetryRequest>>),
         S_Out(<DTLSPlaintext, $S, $C>),
@@ -158,7 +158,7 @@ rule ClientHelloCookie:
     HelloRetryRequest = 
       <
         /*ProtocolVersion*/ protocolVersion(), 
-        /*Random32*/        srandom,
+        /*Random32*/        'HelloRetryRequest',
         /*CipherSuite*/     'CipherSuits',
         /*Extension*/ <
           /*ExtensionType*/     '44', //(For cookie)
@@ -227,7 +227,7 @@ rule ClientHelloCookie:
       [ St_ClientHelloCookie($C, $S, a, session_id, crandom),
         ClientSessionHandshakeHistory($C, $S, <ClientHello, <'2', HelloRetryRequest>, <'1', ClientHelloCookie>>),
         S_Out(<DTLSPlaintext, $C, $S>),
-        ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ClientNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat),
         ClientReceiveSeqAndEpoch(session_id, %rec_seq %+ 1:nat, %rec_epoch) ]
 
 // ServerHello
@@ -323,7 +323,7 @@ rule ServerHello:
         Fr(~b),
         Fr(~msg_len) ]
     --[ Neq('g', ga), Neq(ga, traffic_key), Reach('SH'), /* Ensure gb is not DH_Neutral */
-        Eq(inc_cookie, cookie), Eq(h1(<ClientHandshakeToCompare, srandom>), cookie),
+        Eq(inc_cookie, cookie), Eq(h1(<ClientHandshakeToCompare, 'HelloRetryRequest'>), cookie),
         Start($S, $C, 'server', session_id), /* We must make it a note that we are communicating with the client, so we can discard packages out of order*/ 
         Send($S, $C, 'SH', session_id),
         Nonce($S, session_id, <crandom, srandom>),
@@ -688,7 +688,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '8', /*encrypted_extensions(8)*/
-            <lenEE, 1:nat %+ 1:nat, %offEE, %fragEE>, 
+            <lenEE, 1:nat, %offEE, %fragEE>, 
             EncryptedExtensions
           >, 
           /*zeros*/ <'0'>, 
@@ -710,7 +710,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
-            <lenSC_1, 1:nat %+ 1:nat %+ 1:nat, %offSC_1, %fragSC_1>,
+            <lenSC_1, 1:nat %+ 1:nat, %offSC_1, %fragSC_1>,
             ServerCertificate_1
           >, 
           /*zeros*/ <'0'>, 
@@ -729,7 +729,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
-            <lenSC_2, 1:nat %+ 1:nat %+ 1:nat, %offSC_2, %fragSC_2>,
+            <lenSC_2, 1:nat %+ 1:nat, %offSC_2, %fragSC_2>,
             ServerCertificate_2
           >, 
           /*zeros*/ <'0'>, 
@@ -748,7 +748,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
-            <lenSC_3, 1:nat %+ 1:nat %+ 1:nat, %offSC_3, %fragSC_3>,  
+            <lenSC_3, 1:nat %+ 1:nat, %offSC_3, %fragSC_3>,  
             ServerCertificate_3
           >, 
           /*zeros*/ <'0'>, 
@@ -768,7 +768,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
-            <lenSC_4, 1:nat %+ 1:nat %+ 1:nat, %offSC_4, %fragSC_4>,  
+            <lenSC_4, 1:nat %+ 1:nat, %offSC_4, %fragSC_4>,  
             ServerCertificate_4
           >, 
           /*zeros*/ <'0'>, 
@@ -787,7 +787,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
-            <lenSC_5, 1:nat %+ 1:nat %+ 1:nat, %offSC_5, %fragSC_5>,  
+            <lenSC_5, 1:nat %+ 1:nat, %offSC_5, %fragSC_5>,  
             ServerCertificate_5
           >, 
           /*zeros*/ <'0'>, 
@@ -814,7 +814,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '15', /*certificate_verify(15)*/
-            <lenSCV, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSCV, %fragSCV>, 
+            <lenSCV, 1:nat %+ 1:nat %+ 1:nat, %offSCV, %fragSCV>, 
             CertificateVerify
           >, 
           /*zeros*/ <'0'>, 
@@ -835,7 +835,7 @@ rule ClientFinished:
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
-            <lenSF, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSF, %fragSF>, 
+            <lenSF, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSF, %fragSF>, 
             ServerFinished
           >, 
           /*zeros*/ <'0'>, 
@@ -1079,13 +1079,12 @@ rule AckNoAuth:
       >
   in
       [ S_In(<DTLSCipherText, $C, $S>),
-        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
         ServerReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
         !Keys(<$S, $C, session_id, gb, ga, traffic_key>),
         FinalKey($S, $C, finished_key),
         ServerFinished(<$S, $C, server_finished, session_id, nonce>),
         CertificateRequested(auth_status) ]
-    --[ Eq(client_finished, server_finished), Eq(auth_status, 'True'), Reach('ACKNoAuth'),
+    --[ Eq(client_finished, server_finished), Eq(auth_status, 'False'), Reach('ACKNoAuth'),
         HandshakeComplete($S, $C, 'server', session_id, traffic_key, nonce),
         SessionKey($S, $C, 'server', session_id, traffic_key, 'not_auth'),
         Send($S, $C, 'ACK', session_id) ]->
@@ -1126,6 +1125,12 @@ restriction DEBUG_Only_one_session_server:
 "
   All a1 a2 a3 a4 sid1 sid2 #i #j. 
     Start(a1, a2, 'server', sid1) @ i & Start(a3, a4, 'server', sid2) @ j ==> #i = #j
+"
+
+restriction Only_once:
+"
+  All type #i.
+    Reach(type) @ i ==> not(Ex #j. Reach(type) @j & not(#j = #i) )
 "
 lemma Reach_1:
 exists-trace
