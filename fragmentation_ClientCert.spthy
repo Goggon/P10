@@ -1,0 +1,1589 @@
+theory handshake
+begin
+
+builtins: hashing, diffie-hellman, symmetric-encryption, asymmetric-encryption, signing, natural-numbers
+
+functions: HKDFExpand/1, hmac/1, h1/1
+
+macros: handshakeCryptoHeader() = </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ <'1','0'>>,
+        protocolVersion() = <'254', '253'>
+
+/**** IMPORTANT  ****
+  In DTLS 1.3, the message transcript is computed over the original TLS
+  1.3-style Handshake messages without the message_seq,
+  fragment_offset, and fragment_length values.  Note that this is a
+  change from DTLS 1.2 where those values were included in the
+  transcript.
+********************/
+
+/* Channel rules */
+rule Secure_Chan:
+    [ S_Out(m) ]
+  --[ ]->
+    [ S_In(m) ]
+
+// Adversary power
+rule Reveal_DHExp:
+  [ DHExp(~x, ~tid, $A) ] --[ RevDHExp(~x, ~tid, $A), Corrupt($A) ]-> [ S_Out(~x) ]
+
+rule Reveal_LTK:
+  [ !Ltk($A, ~ltk) ] --[ Corrupt($A) ]-> [ S_Out(~ltk) ]
+
+// Async key setup
+rule Register_pk:
+    [ Fr(~ltk) ]
+  --[ Reg($A) ]->
+    [ !Ltk($A, ~ltk), !Pk($A, pk(~ltk)), S_Out(pk(~ltk)) ]
+
+// ClientHello
+rule ClientHello:
+  let
+    ClientHello = 
+      < /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ ~crandom, 
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+          /*ExtensionType*/ '51', 
+          /*KeyshareClientHello*/ <
+            /*KeyshareEntry*/ <'g', 'g'^~a>
+          >
+        >
+      >
+
+    DTLSPlaintext = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ 1:nat,
+        /*sequence_number*/ 1:nat,
+        /*length*/ ~msg_len,
+        <
+          /*HandshakeType*/ '1', /*client_hello(1)*/
+          <~msg_len, 1:nat, 1:nat, 1:nat>,
+          ClientHello
+        >
+      >
+  in
+      [ Fr(~crandom),
+        Fr(~a),
+        Fr(~session_id),
+        Fr(~msg_len) ]
+    --[ Start($C, $S, 'client', ~session_id), /* We must make it a note that we are communicating with the server, so we can discard packages out of order*/ 
+        Send($C, $S, 'CH', ~session_id),
+        CH_ClientHello($C, $S, ~session_id, <'1', ClientHello>) ]->
+      [ S_Out(<DTLSPlaintext, $C, $S>) /*clienthello plaintext*/,
+        St_ClientHello($C, $S, ~a, ~session_id, ~crandom),
+        ClientSessionHandshakeHistory($C, $S, <h1(<'1', ClientHello>)>) /*We need to save the handshake context*/,
+        DHExp(~a, ~session_id, $C),
+        ClientNextSeqAndEpoch(~session_id, 1:nat %+ 1:nat, 1:nat),
+        ClientReceiveSeqAndEpoch(~session_id, 1:nat, 1:nat) ]
+
+// HelloRetryRequest
+rule HelloRetryRequest:
+  let
+    /********** INCOMMING **********/
+    ClientHello = 
+      < 
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ crandom, 
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+          /*ExtensionType*/ '51', 
+          /*KeyshareClientHello*/ <
+            /*KeyshareEntry*/ <'g', ga>
+          >
+        >
+      >
+
+    ClientDTLSPlaintext = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %epoch,
+        /*sequence_number*/ %seq,
+        /*length*/ len,
+        <
+          /*HandshakeType*/ '1', /*client_hello(1)*/
+          <len, %seq, %off, %frag>,
+          ClientHello
+        >
+      >
+    /******************************/
+
+    /********* HELLORETRYREQUEST ****************/
+    HelloRetryRequest = 
+      <
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/        'HelloRetryRequest',
+        /*CipherSuite*/     'CipherSuits',
+        /*Extension*/ <
+          /*ExtensionType*/     '44', //(For cookie)
+          <
+            /*Cookie*/ <
+              h1(<<'1', ClientHello>, 'HelloRetryRequest'>)
+            >
+          >
+        >
+      >
+
+    DTLSPlaintext = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ 1:nat,
+        /*sequence_number*/ 1:nat,
+        /*length*/ ~msg_len,
+        <
+          /*Handshaketype*/   /*HandshakeType*/ '2', /*server_hello(2)*/
+          <~msg_len, 1:nat, 1:nat, 1:nat>,
+          HelloRetryRequest
+        >
+      >
+
+    /*************************************/
+  in
+      [ Fr(~srandom),
+        Fr(~session_id),
+        Fr(~msg_len),
+        S_In(<ClientDTLSPlaintext, $C, $S>) /*clienthello plaintext*/ ]
+    --[ Send($S, $C, 'HRR', ~session_id), Reach('HRR') ]->
+      [ Cookie($S, $C, h1(<<'1', ClientHello>, 'HelloRetryRequest'>)),
+        St_ServerHelloRetry($S, $C, ~srandom, ~session_id),
+        ServerSessionHandshakeHistory($S, $C, <h1(<'1', ClientHello>), <'2', HelloRetryRequest>>),
+        S_Out(<DTLSPlaintext, $S, $C>),
+        ServerNextSeqAndEpoch(~session_id, 1:nat %+ 1:nat, 1:nat),
+        ServerReceiveSeqAndEpoch(~session_id, %seq %+ 1:nat, %epoch) ]
+
+// ClientHelloCookie
+rule ClientHelloCookie:
+  let
+    /********* INCOMMING: HELLORETRYREQUEST ********/
+    HelloRetryRequest = 
+      <
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/        'HelloRetryRequest',
+        /*CipherSuite*/     'CipherSuits',
+        /*Extension*/ <
+          /*ExtensionType*/     '44', //(For cookie)
+          <
+            /*Cookie*/ <
+              cookie
+            >
+          >
+        >
+      >
+
+    ServerDTLSPlaintext = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %rec_epoch,
+        /*sequence_number*/ %rec_seq,
+        /*length*/ len,
+        <
+          /*HandshakeType*/ '2', /*server_hello(2)*/
+          <len, %rec_seq, %off, %frag>,
+          HelloRetryRequest
+        >
+      >
+
+    /*************************************/
+
+    /************* CLIENTHELLOCOOKIE ***********/
+    ClientHelloCookie = 
+      < 
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ crandom, 
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+          /*ExtensionType*/ '51', 
+          /*KeyshareClientHello*/ <
+            /*KeyshareEntry*/ <'g', 'g'^a>
+          >,
+          /*ExtensionType*/     '44', //(For cookie)
+          <
+            /*Cookie*/ <cookie>
+          >
+        >
+      >
+
+    DTLSPlaintext = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %next_epoch,
+        /*sequence_number*/ %next_seq,
+        /*length*/ ~msg_len,
+        <
+          /*HandshakeType*/ '1', /*client_hello(1)*/
+          <~msg_len, %next_seq, 1:nat, 1:nat>,
+          ClientHelloCookie
+        >
+      >
+    /*************************************/
+  in
+      [ Fr(~msg_len),
+        ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
+        S_In(<ServerDTLSPlaintext, $S, $C>),
+        ClientSessionHandshakeHistory($C, $S, <ClientHello>),
+        St_ClientHello($C, $S, a, session_id, crandom) ]
+    --[ Send($C, $S, 'CHC', session_id), Reach('CHC') ]->
+      [ St_ClientHelloCookie($C, $S, a, session_id, crandom),
+        ClientSessionHandshakeHistory($C, $S, <ClientHello, <'2', HelloRetryRequest>, <'1', ClientHelloCookie>>),
+        S_Out(<DTLSPlaintext, $C, $S>),
+        ClientNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat),
+        ClientReceiveSeqAndEpoch(session_id, %rec_seq %+ 1:nat, %rec_epoch) ]
+
+// ServerHello
+rule ServerHello:
+  let
+    /********** INCOMMING **********/
+    ClientHelloCookie = 
+      <
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ crandom, 
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+          /*ExtensionType*/ '51', 
+          /*KeyshareClientHello*/ <
+            /*KeyshareEntry*/ <'g', ga>
+          >,
+          /*ExtensionType*/     '44', //(For cookie)
+          <
+            /*Cookie*/ <
+              inc_cookie
+            >
+          >
+        >
+      >
+
+    ClientDTLSPlaintext = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %rec_epoch,
+        /*sequence_number*/ %rec_seq,
+        /*length*/ len,
+        <
+          /*HandshakeType*/ '1', /*client_hello(1)*/
+          <len, %rec_seq, %off, %frag>,
+          ClientHelloCookie
+        >
+      >
+    
+    // We must remove the cookie in order to compare the ClientHellos
+    ClientHandshakeToCompare = 
+      <
+        /*HandshakeType*/ '1', /*client_hello(1)*/
+        <
+          /*ProtocolVersion*/ protocolVersion(), 
+          /*Random32*/ crandom, 
+          /*CipherSuite*/ 'CipherSuits', 
+          /*Extension*/ <
+            /*ExtensionType*/ '51', 
+            /*KeyshareClientHello*/ <
+              /*KeyshareEntry*/ <'g', ga>
+            >
+          >
+        >
+      >
+    /******************************/
+
+    traffic_key = ga^~b
+
+    /********** SERVERHELLO **********/
+    ServerHello = 
+      <
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ srandom, 
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+          /*ExtensionType*/ '51', 
+          /*KeyshareServerHello*/ <'g', 'g'^~b>
+        >
+      >
+
+    DTLSPlaintextSH = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %next_epoch,
+        /*sequence_number*/ %next_seq,
+        /*length*/ ~msg_len,
+        <
+          /*HandshakeType*/ '2', /*server_hello(2)*/
+          <~msg_len, %next_seq, 1:nat, 1:nat>,
+          ServerHello
+        >
+      >
+    /******************************/
+
+      
+  in
+      [ Cookie($S, $C, cookie),
+        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ServerReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
+        St_ServerHelloRetry($S, $C, srandom, session_id),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest>),
+        S_In(<ClientDTLSPlaintext, $C, $S>) /*clienthello plaintext*/,
+        Fr(~b),
+        Fr(~msg_len) ]
+    --[ Neq('g', ga), Neq(ga, traffic_key), Reach('SH'), /* Ensure gb is not DH_Neutral */
+        Eq(inc_cookie, cookie), Eq(h1(<ClientHandshakeToCompare, 'HelloRetryRequest'>), cookie),
+        Start($S, $C, 'server', session_id), /* We must make it a note that we are communicating with the client, so we can discard packages out of order*/ 
+        Send($S, $C, 'SH', session_id),
+        Nonce($S, session_id, <crandom, srandom>),
+        SH_ClientHello($S, $C, session_id, ClientHandshakeToCompare) ]->
+      [ S_Out(<DTLSPlaintextSH, $S, $C>) /*serverhello plaintext*/,
+        SendEE(session_id), 
+        !Keys(<$S, $C, session_id, 'g'^~b, ga, traffic_key>),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, <'1', ClientHelloCookie>, <'2', ServerHello>>),
+        DHExp(~b, session_id, $S),
+        RequestCertificate($S, $C, session_id),
+        Nonce($S, session_id, <crandom, srandom>),
+        ServerNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat),
+        ServerReceiveSeqAndEpoch(session_id, 1:nat, %rec_epoch %+ 1:nat) /*Reset sequence number*/ ]
+
+// EncryptedExtensions
+rule EncryptedExtensions:
+  let
+    /********** ENCRYPTEDEXTENSION **********/
+    EncryptedExtensions = 
+    <
+      /*Extension*/ <
+          /*ExtensionType*/ '13', 
+          /*EncryptedExtensions*/ 'encryptedExtensions'
+      >
+    >
+
+    DTLSInnerPlaintextEE = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '8', /*encrypted_extensions(8)*/
+          <~msg_len, %next_seq, 1:nat, 1:nat>, 
+          EncryptedExtensions
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextEE = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextEE
+      >
+    /******************************/
+  in
+      [ Fr(~msg_len),
+        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        SendEE(session_id),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello>),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
+    --[ Send($S, $C, 'EE', session_id), Reach('EE') ]->
+      [ S_Out(<DTLSCipherTextEE, $S, $C>) /*encryptedextensions encrypted*/,
+        SendSC(session_id),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, <'8', EncryptedExtensions>>),
+        ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch) ]
+
+// ServerCertificate
+rule ServerCertificate:
+  let
+    /********** SERVERCERTIFICATE **********/
+    %frag_max = 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat
+    ServerCertificate_1 = 
+    <
+      /*certificate_entry*/ 'ser'
+    >
+
+    DTLSInnerPlaintextSC_1 = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '11', /*certificate(11)*/
+          <msg_len_1, %next_seq, 1:nat, %frag_max>,
+          ServerCertificate_1
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextSC_1 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextSC_1
+      >   
+
+      ServerCertificate_2 = 
+    <
+      /*certificate_entry*/ 've'
+    >
+
+    DTLSInnerPlaintextSC_2 = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '11', /*certificate(11)*/
+          <msg_len_2, %next_seq, 1:nat %+ 1:nat, %frag_max>,  
+          ServerCertificate_2
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextSC_2 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextSC_2
+      >   
+
+      ServerCertificate_3 = 
+    <
+      /*certificate_entry*/ 'rC'
+    >
+
+    DTLSInnerPlaintextSC_3 = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '11', /*certificate(11)*/
+          <msg_len_3, %next_seq, 1:nat %+ 1:nat %+ 1:nat, %frag_max>, 
+          ServerCertificate_3
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextSC_3 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextSC_3
+      >   
+
+      ServerCertificate_4 = 
+    <
+      /*certificate_entry*/ 'er'
+    >
+
+    DTLSInnerPlaintextSC_4 = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '11', /*certificate(11)*/
+          <msg_len_4, %next_seq, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %frag_max>,  
+          ServerCertificate_4
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextSC_4 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextSC_4
+      >  
+
+      ServerCertificate_5 = 
+    <
+      /*certificate_entry*/ 't'
+    >
+
+    DTLSInnerPlaintextSC_5 = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '11', /*certificate(11)*/
+          <msg_len_5, %next_seq, %frag_max, %frag_max>,  
+          ServerCertificate_5
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextSC_5 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextSC_5
+      >      
+
+    // Reasembeled handshake record
+    ServerCertificate = <ServerCertificate_1, ServerCertificate_2, ServerCertificate_3, ServerCertificate_4, ServerCertificate_5>
+      
+    /******************************/
+  in
+      [ Fr(msg_len_1),
+        Fr(msg_len_2),
+        Fr(msg_len_3),
+        Fr(msg_len_4),
+        Fr(msg_len_5),
+        SendSC(session_id),
+        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions>),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
+    --[ Send($S, $C, 'C', session_id), Reach('SC') ]->
+      [ S_Out(<DTLSCipherTextSC_1, $S, $C>), /*servercertificate encrypted fragment 1*/
+        S_Out(<DTLSCipherTextSC_2, $S, $C>), /*servercertificate encrypted fragment 2*/
+        S_Out(<DTLSCipherTextSC_3, $S, $C>), /*servercertificate encrypted fragment 3*/
+        S_Out(<DTLSCipherTextSC_4, $S, $C>), /*servercertificate encrypted fragment 4*/
+        S_Out(<DTLSCipherTextSC_5, $S, $C>), /*servercertificate encrypted fragment 5*/
+        SendCV(session_id),
+        ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, <'11', ServerCertificate>>) ]
+
+// ServerCertificateVerify
+rule ServerCertificateVerify:
+  let
+    /********** SERVERCERTIFICATEVERIFY **********/
+    CertificateVerify = 
+    <
+      /*algorithm*/ $alg, 
+      /*signature*/ sign(hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, <'11', ServerCertificate>>), ServerCertificate>), serverPrivateKey)
+    >
+
+    DTLSInnerPlaintextCV = 
+      senc{<
+        /*content*/ <
+          /*HandshakeType*/ '15', /*certificate_verify(15)*/
+          <~msg_len, %next_seq, 1:nat, 1:nat>, 
+          CertificateVerify
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >}traffic_key
+
+    DTLSCipherTextCV = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextCV
+      >
+    /******************************/
+  in
+      [ Fr(~msg_len),
+        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        SendCV(session_id),
+        !Ltk($S, serverPrivateKey),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, <'11', ServerCertificate>>),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
+    --[ Send($S, $C, 'CV', session_id), Reach('SCV') ]->
+      [ S_Out(<DTLSCipherTextCV, $S, $C>), /*servercertificateverify encrypted*/
+        SendSF(session_id),
+        ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, <'11', ServerCertificate>, <'15', CertificateVerify>>) ]
+
+// ServerFinished
+rule ServerFinished:
+  let
+    /********** SERVERFINISHED **********/
+    finished_key =  HKDFExpand(<traffic_key, 'finished', 'Hash_length'>)
+
+    ServerFinished = 
+      <
+        /*verify_data*/  hmac(<finished_key, 
+                              h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>)>)
+      >
+
+    DTLSCipherTextSF = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <~msg_len, %next_seq, 1:nat, 1:nat>, 
+            ServerFinished
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /******************************/
+  in
+      [ Fr(~msg_len),
+        SendSF(session_id),
+        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>),
+        Nonce($S, session_id, <crandom, srandom>) ]
+    --[ Send($S, $C, 'SF', session_id), Reach('SF'),
+        Running($S, 'server', <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>) /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/ ]->
+      [ S_Out(<DTLSCipherTextSF, $S, $C>), /*server finished*/
+        ServerFinished(<$S, $C, hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>)>), session_id, <crandom, srandom>>),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, <'20', ServerFinished>>),
+        ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch %+ 1:nat),
+        FinalKey($S, $C, finished_key) ]
+
+// ServerCertificateRequest
+rule ServerCertificateRequest:
+  let
+    CertificateRequest = 
+      <
+        /*certificate_request_context*/ //Empty length
+        /*Extension*/ $client_alg
+      >
+
+    DTLSInnerPlaintextCR = 
+      senc(<
+        /*content*/ <
+          /*HandshakeType*/ '13', /*certificate_request(13)*/
+          <~msg_len, %next_seq, 1:nat, 1:nat>,
+          CertificateRequest
+        >, 
+        /*zeros*/ <'0'>, 
+        /*ContentType*/ '22'
+      >, traffic_key)
+
+    DTLSCipherTextCR = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ DTLSInnerPlaintextCR
+      >
+
+  in
+      [ Fr(~msg_len),
+        ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        RequestCertificate($S, $C, session_id),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
+    --[ CertificateRequested('True') ]->
+      [ CertificateRequested('True'),
+        ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch),
+        S_Out(<DTLSCipherTextCR, $S, $C>) /* server request certificate */ ]
+
+// ServerNoCertificateRequest
+rule ServerNoCertificateRequest:
+    [ RequestCertificate($S, $C, session_id) ]
+  --[ CertificateRequested('False') ]->
+    [ CertificateRequested('False') ]
+
+
+
+
+//ClientFinished
+rule ClientFinishedNoAuth:
+  let
+    traffic_key = gb^a
+
+    /********** INCOMMING: SERVERHELLO **********/
+    ServerHello = 
+      <
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ srandom,  
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+            /*ExtensionType*/ '51', 
+            /*KeyshareServerHello*/ <'g', gb>
+        >
+      >
+
+    DTLSPlaintextSH = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %rec_epoch,
+        /*sequence_number*/ %rec_seq,
+        /*length*/ lenSH,
+        <
+          /*HandshakeType*/ '2', /*server_hello(2)*/
+          <lenSH, %rec_seq, %offSH, %fragSH>,
+          ServerHello
+        >
+      >
+    /********************************************/
+
+    /********** INCOMMING: ENCRYPTEDEXTENSION **********/
+    EncryptedExtensions = 
+      <
+        /*Extension*/ <
+            /*ExtensionType*/ '13', 
+            /*EncryptedExtensions*/ 'encryptedExtensions'
+        >
+      >
+
+    DTLSCipherTextEE = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '8', /*encrypted_extensions(8)*/
+            <lenEE, 1:nat, %offEE, %fragEE>, 
+            EncryptedExtensions
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+
+    /********************************************/
+
+    /********** INCOMMING: SERVERCERTIFICATE **********/
+    ServerCertificate_1 = 
+    <
+      /*certificate_entry*/ 'ser'
+    >
+
+    DTLSCipherTextSC_1 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_1, 1:nat %+ 1:nat, %offSC_1, %fragSC_1>,
+            ServerCertificate_1
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >   
+
+    ServerCertificate_2 = 
+    <
+      /*certificate_entry*/ 've'
+    >
+
+    DTLSCipherTextSC_2 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_2, 1:nat %+ 1:nat, %offSC_2, %fragSC_2>,
+            ServerCertificate_2
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >   
+
+    ServerCertificate_3 = 
+    <
+      /*certificate_entry*/ 'rC'
+    >
+
+    DTLSCipherTextSC_3 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_3, 1:nat %+ 1:nat, %offSC_3, %fragSC_3>,  
+            ServerCertificate_3
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >   
+
+
+    ServerCertificate_4 = 
+    <
+      /*certificate_entry*/ 'er'
+    >
+
+    DTLSCipherTextSC_4 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_4, 1:nat %+ 1:nat, %offSC_4, %fragSC_4>,  
+            ServerCertificate_4
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >  
+
+    ServerCertificate_5 = 
+    <
+      /*certificate_entry*/ 't'
+    >
+
+    DTLSCipherTextSC_5 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_5, 1:nat %+ 1:nat, %offSC_5, %fragSC_5>,  
+            ServerCertificate_5
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >    
+
+    // Reasembeled
+    ServerCertificate = <ServerCertificate_1, ServerCertificate_2, ServerCertificate_3, ServerCertificate_4, ServerCertificate_5>
+      
+                  
+    /******************************/
+
+    /********** INCOMMING: SERVERCERTIFICATEVERIFY **********/
+    CertificateVerify = 
+    <
+      /*algorithm*/ $alg, 
+      /*signature*/ serverSignature //hmac(<h1(<DTLSHandshake_CH, DTLSSH, DTLSEE, DTLSSC>), 'serverCert'>) 
+    >
+
+    DTLSCipherTextCV = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '15', /*certificate_verify(15)*/
+            <lenSCV, 1:nat %+ 1:nat %+ 1:nat, %offSCV, %fragSCV>, 
+            CertificateVerify
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+    /******************************/
+
+    /********** INCOMMING: SERVERFINISHED **********/
+    ServerFinished = 
+      <
+        /*verify_data*/ server_finished
+      >
+      
+    ServerDTLSCipherTextSF = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <lenSF, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSF, %fragSF>, 
+            ServerFinished
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /********************************************/
+
+    /********** CLIENTFINISHED **********/
+    finished_key =  HKDFExpand(<traffic_key, 'finished', 'Hash_length'>)
+
+    ClientFinished = 
+      <
+        /*verify_data*/  hmac(<finished_key, 
+                              h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>)>)
+      >
+
+    DTLSCipherText =  
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <~msg_len, %next_seq, 1:nat, 1:nat>, 
+            ClientFinished
+          >, 
+          /*zeros*/ <'0', '0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /**********************************/
+  in
+      [ Fr(~msg_len),
+        St_ClientHelloCookie($C, $S, a, session_id, crandom),
+        ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
+        !Pk($S, serverPublicKey),
+        S_In(<DTLSPlaintextSH, $S, $C>) /*serverhello plaintext*/,
+        S_In(<DTLSCipherTextEE, $S, $C>) /*encryptedextensions encrypted*/,
+        S_In(<DTLSCipherTextSC_1, $S, $C>), /*servercertificate encrypted fragment 1*/
+        S_In(<DTLSCipherTextSC_2, $S, $C>), /*servercertificate encrypted fragment 2*/
+        S_In(<DTLSCipherTextSC_3, $S, $C>), /*servercertificate encrypted fragment 3*/
+        S_In(<DTLSCipherTextSC_4, $S, $C>), /*servercertificate encrypted fragment 4*/
+        S_In(<DTLSCipherTextSC_5, $S, $C>), /*servercertificate encrypted fragment 5*/
+        S_In(<DTLSCipherTextCV, $S, $C>) /*servercertificateverify encrypted*/,
+        S_In(<ServerDTLSCipherTextSF, $S, $C>), /*server finished*/
+        ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie>) ]
+    --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CF'),
+        SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
+        FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
+        Nonce($C, session_id, <crandom, srandom>),
+        CommitAuth($C, $S, 'client', <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>), /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/
+        Neq('g', gb), Neq(gb, traffic_key), /* Ensure gb is not DH_Neutral */
+        Eq(hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>)>), server_finished), 
+        Eq(verify(serverSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>>), ServerCertificate>), serverPublicKey), true),
+        Send($C, $S, 'CF', session_id) ]->
+      [ S_Out(<DTLSCipherText, $C, $S>) /*client finished*/,
+        ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>, <'20', ServerFinished>>),
+        ClientNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat), /* Reset sequence */
+        ClientReceiveSeqAndEpoch(session_id, 1:nat, %rec_epoch %+ 1:nat),
+        !ClientKeys(<$C, $S, session_id, 'g'^a, gb, traffic_key>) ]
+
+//ClientFinished
+rule ClientFinishedAuth:
+  let
+    traffic_key = gb^a
+
+    /********** INCOMMING: SERVERHELLO **********/
+    ServerHello = 
+      <
+        /*ProtocolVersion*/ protocolVersion(), 
+        /*Random32*/ srandom,  
+        /*CipherSuite*/ 'CipherSuits', 
+        /*Extension*/ <
+            /*ExtensionType*/ '51', 
+            /*KeyshareServerHello*/ <'g', gb>
+        >
+      >
+
+    DTLSPlaintextSH = 
+      <
+        /*ContentType*/ '22',
+        /*epoch*/ %rec_epoch,
+        /*sequence_number*/ %rec_seq,
+        /*length*/ lenSH,
+        <
+          /*HandshakeType*/ '2', /*server_hello(2)*/
+          <lenSH, %rec_seq, %offSH, %fragSH>,
+          ServerHello
+        >
+      >
+    /********************************************/
+
+    /********** INCOMMING: ENCRYPTEDEXTENSION **********/
+    EncryptedExtensions = 
+      <
+        /*Extension*/ <
+            /*ExtensionType*/ '13', 
+            /*EncryptedExtensions*/ 'encryptedExtensions'
+        >
+      >
+
+    DTLSCipherTextEE = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '8', /*encrypted_extensions(8)*/
+            <lenEE, 1:nat, %offEE, %fragEE>, 
+            EncryptedExtensions
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+
+    /********************************************/
+
+    /********** INCOMMING ***********/
+    CertificateRequest = 
+      <
+        /*certificate_request_context*/ //Empty length
+        /*Extension*/ $client_alg
+      >
+
+    DTLSCipherTextCR = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '13', /*certificate_request(13)*/
+            <lenCR, 1:nat %+ 1:nat, %off, %frag>,
+            CertificateRequest
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+  /******************************/
+
+    /********** INCOMMING: SERVERCERTIFICATE **********/
+    ServerCertificate_1 = 
+      <
+        /*certificate_entry*/ 'ser'
+      >
+
+    DTLSCipherTextSC_1 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_1, 1:nat %+ 1:nat %+ 1:nat, %offSC_1, %fragSC_1>,
+            ServerCertificate_1
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >   
+
+    ServerCertificate_2 = 
+      <
+        /*certificate_entry*/ 've'
+      >
+
+    DTLSCipherTextSC_2 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_2, 1:nat %+ 1:nat %+ 1:nat, %offSC_2, %fragSC_2>,
+            ServerCertificate_2
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >   
+
+    ServerCertificate_3 = 
+      <
+        /*certificate_entry*/ 'rC'
+      >
+
+    DTLSCipherTextSC_3 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_3, 1:nat %+ 1:nat %+ 1:nat, %offSC_3, %fragSC_3>,  
+            ServerCertificate_3
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >   
+
+
+    ServerCertificate_4 = 
+      <
+        /*certificate_entry*/ 'er'
+      >
+
+    DTLSCipherTextSC_4 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_4, 1:nat %+ 1:nat %+ 1:nat, %offSC_4, %fragSC_4>,  
+            ServerCertificate_4
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >  
+
+    ServerCertificate_5 = 
+      <
+        /*certificate_entry*/ 't'
+      >
+
+    DTLSCipherTextSC_5 = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenSC_5, 1:nat %+ 1:nat %+ 1:nat, %offSC_5, %fragSC_5>,  
+            ServerCertificate_5
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >    
+
+    // Reasembeled
+    ServerCertificate = <ServerCertificate_1, ServerCertificate_2, ServerCertificate_3, ServerCertificate_4, ServerCertificate_5>            
+    /******************************/
+
+    /********** INCOMMING: SERVERCERTIFICATEVERIFY **********/
+    CertificateVerifySCV = 
+      <
+        /*algorithm*/ $alg, 
+        /*signature*/ serverSignature //hmac(<h1(<DTLSHandshake_CH, DTLSSH, DTLSEE, DTLSSC>), 'serverCert'>) 
+      >
+
+    DTLSCipherTextSCV = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '15', /*certificate_verify(15)*/
+            <lenSCV, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSCV, %fragSCV>, 
+            CertificateVerify
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+    /******************************/
+
+    /********** INCOMMING: SERVERFINISHED **********/
+    ServerFinished = 
+      <
+        /*verify_data*/ server_finished
+      >
+      
+    ServerDTLSCipherTextSF = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <lenSF, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSF, %fragSF>, 
+            ServerFinished
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /********************************************/
+
+    /********** CERTIFICATE **********/
+    ClientCertificate = 
+      <
+        /*certificate_entry*/ 'clientCert'
+      >
+
+    DTLSCipherTextCC = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <~msg_len_1, %next_seq, 1:nat, 1:nat>,  
+            ClientCertificate
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+    /******************************/
+
+    /********** CERTIFICATEVERIFY **********/
+    CertificateVerify = 
+      <
+        /*algorithm*/ $client_alg, 
+        /*signature*/ sign(hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, ServerCertificateVerify, ServerFinished>), 'clientCert'>), clientPrivateKey)
+      >
+
+    DTLSCipherTextCV = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '15', /*certificate_verify(15)*/
+            <~msg_len_2, %next_seq %+ 1:nat, 1:nat, 1:nat>, 
+            CertificateVerify
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+    /******************************/
+
+    /********** CLIENTFINISHED **********/
+    finished_key =  HKDFExpand(<traffic_key, 'finished', 'Hash_length'>)
+
+    ClientFinished = 
+      <
+        /*verify_data*/  hmac(<finished_key, 
+                              h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>)>)
+      >
+
+    DTLSCipherText =  
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <~msg_len, %next_seq, 1:nat, 1:nat>, 
+            ClientFinished
+          >, 
+          /*zeros*/ <'0', '0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /**********************************/
+  in
+      [ Fr(~msg_len), Fr(~msg_len_1), Fr(~msg_len_2),
+        St_ClientHelloCookie($C, $S, a, session_id, crandom),
+        ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+        ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
+        !Pk($S, serverPublicKey),
+        S_In(<DTLSPlaintextSH, $S, $C>) /*serverhello plaintext*/,
+        S_In(<DTLSCipherTextEE, $S, $C>) /*encryptedextensions encrypted*/,
+        S_In(<DTLSCipherTextSC_1, $S, $C>), /*servercertificate encrypted fragment 1*/
+        S_In(<DTLSCipherTextSC_2, $S, $C>), /*servercertificate encrypted fragment 2*/
+        S_In(<DTLSCipherTextSC_3, $S, $C>), /*servercertificate encrypted fragment 3*/
+        S_In(<DTLSCipherTextSC_4, $S, $C>), /*servercertificate encrypted fragment 4*/
+        S_In(<DTLSCipherTextSC_5, $S, $C>), /*servercertificate encrypted fragment 5*/
+        S_In(<DTLSCipherTextSCV, $S, $C>) /*servercertificateverify encrypted*/,
+        S_In(<ServerDTLSCipherTextSF, $S, $C>), /*server finished*/
+        S_In(<DTLSCipherTextCR, $S, $C>),
+        !Ltk($C, clientPrivateKey),
+        !ClientKeys(<$C, $S, session_id, ga, gb, traffic_key>),
+        ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie>) ]
+    --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CF'),
+        SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
+        FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
+        Nonce($C, session_id, <crandom, srandom>),
+        Running($S, 'server', <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, ServerCertificateVerify, ServerFinished>),
+        CommitAuth($C, $S, 'client', <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>), /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/
+        Neq('g', gb), Neq(gb, traffic_key), /* Ensure gb is not DH_Neutral */
+        Eq(hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>)>), server_finished), 
+        Eq(verify(serverSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>>), ServerCertificate>), serverPublicKey), true),
+        Send($C, $S, 'CF', session_id) ]->
+      [ S_Out(<DTLSCipherText, $C, $S>) /*client finished*/,
+        S_Out(<DTLSCipherTextCC, $C, $S>), 
+        S_Out(<DTLSCipherTextCV, $C, $S>),
+        ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>, <'20', ServerFinished>>),
+        ClientNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat), /* Reset sequence */
+        ClientReceiveSeqAndEpoch(session_id, 1:nat, %rec_epoch %+ 1:nat),
+        !ClientKeys(<$C, $S, session_id, 'g'^a, gb, traffic_key>) ]
+
+// Ack
+rule Ack:
+  let
+    /********** INCOMMING: CERTIFICATE **********/
+    ClientCertificate = 
+      <
+        /*certificate_entry*/ 'clientCert'
+      >
+    
+    DTLSCipherTextCC = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '11', /*certificate(11)*/
+            <lenCC, %rec_seq, %offCC, %fragCC>,  
+            ClientCertificate
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+    /******************************/
+
+    /********** INCOMMING: CERTIFICATEVERIFY **********/
+    CertificateVerify = 
+      <
+        /*algorithm*/ $client_alg, 
+        /*signature*/ clientSignature
+      >
+
+    DTLSCipherTextCV = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc{<
+          /*content*/ <
+            /*HandshakeType*/ '15', /*certificate_verify(15)*/
+            <lenCV, %rec_seq %+ 1:nat, %offCV, %fragCV>, 
+            CertificateVerify
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >}traffic_key
+      >
+    /******************************/
+
+    /********** INCOMMING: FINISHED **********/
+    DTLSCipherTextCF = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <lenCF, %rec_seq %+ 1:nat %+ 1:nat, %offCF, %fragCF>, 
+            client_finished
+          >, 
+          /*zeros*/ <'0', '0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /******************************/
+  in
+      [ S_In(<DTLSCipherTextCC, $C, $S>),
+        S_In(<DTLSCipherTextCV, $C, $S>),
+        S_In(<DTLSCipherTextCF, $C, $S>),
+        ServerReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
+        !Pk($C, clientPublicKey),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>),
+        FinalKey($S, $C, finished_key),
+        ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>),
+        ServerFinished(<$S, $C, server_finished, session_id, nonce>),
+        CertificateRequested(auth_status) ]
+    --[ Eq(client_finished, server_finished), Eq(auth_status, 'True'), Reach('ACK'),
+        Eq(verify(clientSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>), 'clientCert'>), clientPublicKey), true),
+        CommitAuth($S, $C, 'server', <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>),
+        HandshakeComplete($S, $C, 'server', session_id, traffic_key, nonce),
+        SessionKey($S, $C, 'server', session_id, traffic_key, 'auth'),
+        Send($S, $C, 'ACK', session_id) ]->
+      []
+      
+// AckNoAuth
+rule AckNoAuth:
+  let
+    DTLSCipherText = 
+      <
+        /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '20', /*finished(20)*/
+            <len, %rec_seq, %off, %frag>, 
+            client_finished
+          >, 
+          /*zeros*/ <'0', '0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+  in
+      [ S_In(<DTLSCipherText, $C, $S>),
+        ServerReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
+        !Keys(<$S, $C, session_id, gb, ga, traffic_key>),
+        FinalKey($S, $C, finished_key),
+        ServerFinished(<$S, $C, server_finished, session_id, nonce>),
+        CertificateRequested(auth_status) ]
+    --[ Eq(client_finished, server_finished), Eq(auth_status, 'False'), Reach('ACKNoAuth'),
+        HandshakeComplete($S, $C, 'server', session_id, traffic_key, nonce),
+        SessionKey($S, $C, 'server', session_id, traffic_key, 'not_auth'),
+        Send($S, $C, 'ACK', session_id) ]->
+      []
+
+// Restriction to allow for equality checks
+restriction Equal:
+"
+  All x y #i.
+    Eq(x, y) @ #i ==> x = y
+"
+
+// Restriction made to allow for inequality checks
+restriction Not_equal:
+"
+  All x y #i.
+    Neq(x, y) @ #i ==> not(x = y)
+"
+
+// Restriction only allow each actor to register one longterm-key
+restriction Only_one_ltk_per_actor:
+"
+  All A #i #j.
+    Reg(A) @ i & Reg(A) @ j ==> #i = #j
+"
+
+// Debug restriction to only have one client active in the system
+// The adversary can act as other client from the active clients point of view
+restriction DEBUG_Only_one_session_client:
+"
+  All a1 a2 a3 a4 sid1 sid2 #i #j. 
+    Start(a1, a2, 'client', sid1) @ i & Start(a3, a4, 'client', sid2) @ j ==> #i = #j
+"
+
+// Debug restriction to only have one server active in the system
+// This is less likely to be realistic, and should not be activeated in the general scheme of things
+restriction DEBUG_Only_one_session_server:
+"
+  All a1 a2 a3 a4 sid1 sid2 #i #j. 
+    Start(a1, a2, 'server', sid1) @ i & Start(a3, a4, 'server', sid2) @ j ==> #i = #j
+"
+/*
+restriction Only_once:
+"
+  All type #i.
+    Reach(type) @ i ==> not(Ex #j. Reach(type) @j & not(#j = #i) )
+"*/
+lemma Reach_1:
+exists-trace
+"
+  Ex #i. Reach('HRR') @ i
+"
+
+lemma Reach_2:
+exists-trace
+"
+  Ex #i. Reach('CHC') @ i
+"
+lemma Reach_3:
+exists-trace
+"
+  Ex #i. Reach('SH') @ i
+"
+lemma Reach_4:
+exists-trace
+"
+  Ex #i. Reach('EE') @ i
+"
+lemma Reach_5:
+exists-trace
+"
+  Ex #i. Reach('SC') @ i
+"
+lemma Reach_6:
+exists-trace
+"
+  Ex #i. Reach('SF') @ i
+"
+
+lemma Reach_7:
+exists-trace
+"
+  Ex #i. Reach('CF') @ i
+"
+lemma Reach_8:
+exists-trace
+"
+  Ex #i. Reach('ACKNoAuth') @ i
+"
+
+lemma Reach_9:
+exists-trace
+"
+  Ex #i #j. Reach('ACK') @ i & CertificateRequested('True') @ j
+"
+
+
+// Restriction R1: Restrict the actors to not instigate in more than one handshake with each others at a time
+// This is relistic, since two honest actors to not want to attempt to instantiate two handshakes with each other at one time
+// The restriction specify; If two session has been started, then the first session must have been complete before the new one start
+restriction R1_Only_one_session_per_pair_at_a_time:
+"
+  All actor1 actor2 role session_id1 session_id2 #i #j.
+    Start(actor1, actor2, role, session_id1) @ i & Start(actor1, actor2, role, session_id2) @ j & i < j
+      ==> Ex traffic_key nonce #k. HandshakeComplete(actor1, actor2, role, session_id1, traffic_key, nonce) @ k & k < j & i < k
+"
+
+// Restriction R2: Restrict the actors to not make sessions with them selves
+// The restriction is self explanitory
+// The restriction specify; Actors may not start a session with them self
+restriction R2_Dont_essablish_session_with_self:
+"
+  All actor1 actor2 role session_id #i.
+    Start(actor1, actor2, role, session_id) @ #i & actor1 = actor2 ==> F
+"
+
+// Restriction R3: Dont resend messages. If a message that has already been processed is received again, ignore it.
+// The restriction is a measure taken directly from the specification to not allow for replay attacks
+// The restriction specify; If a message type is send twich on the same session id, then it must happen at the same time (it has in fact only been send once)
+restriction R3_Dont_resend_messages:
+"
+  All actor1 actor2 msg_type session_id #i #j.
+    Send(actor1, actor2, msg_type, session_id) @ #i & Send(actor1, actor2, msg_type, session_id) @ #j ==> #i = #j
+"
+
+// Restriction R4: Fragment offsets must be in the correct order. 
+// All traces should only process messages in the correct order accoding to offset. In the model offset is defined as natural numbers starting 
+// from the number 1.
+// The restriction specify; If fragments are received, they should be in the order frag_offset_1 is the lowest and frag_offset_5 is the highest
+restriction R4_Fragments_in_order:
+"
+  All %frag_offset_1 %frag_offset_2 %frag_offset_3 %frag_offset_4 %frag_offset_5 #i.
+    FragmentsInOrder(%frag_offset_1, %frag_offset_2, %frag_offset_3, %frag_offset_4, %frag_offset_5) @ i
+      ==> %frag_offset_1 ⊏ %frag_offset_2 & %frag_offset_2 ⊏ %frag_offset_3 & %frag_offset_3 ⊏ %frag_offset_4 & %frag_offset_4 ⊏ %frag_offset_5
+"
+
+// Validation V1: Reachability lemma
+// A handshake must be able to be started AND ended from both the client and the servers perspective without either being corrupt or the adversary knowing the traffic key
+// if the adversary knows the traffic_key, or either actor is corrupt, the adversary can makes this lemma trivially true
+// The lemma specify; There must exists a time where both the server and client has started a session and ended is successfully, while not being corrupt and with the 
+// adversary not knowing the traffic key. 
+lemma V1_Reachability_with_both_actors:
+  exists-trace
+  "Ex C S client_session_id server_session_id traffic_key nonce #i #j #k #l. 
+    Start(C, S, 'client', client_session_id) @ i & Start(S, C, 'server', server_session_id) @ j
+    & HandshakeComplete(C, S, 'client', client_session_id, traffic_key, nonce) @ k & HandshakeComplete(S, C, 'server', server_session_id, traffic_key, nonce) @ l
+    & not(Ex #p. Corrupt(C) @ p) 
+    & not(Ex #q. Corrupt(S) @ q)
+    & not(Ex #r. K(traffic_key) @ r)
+  "
+
+/* Validation V2: Cookie validations */
+
+  // We must not skip the cookie exchange
+  // All handshakes should perform a cookie exchange, and such an SH cannot happen without a cookie exchange earliere on the same session
+  // The lemma specify; 
+  lemma V2_1_No_SH_without_HRR:
+    "
+      All C S session_id #i.
+        Send(S, C, 'SH', session_id) @ i ==> Ex #j. Send(S, C, 'HRR', session_id) @ j & #j < #i
+    "
+  
+  // 
+  // The lemma specify; 
+  lemma V2_2_CH_before_CHC:
+    "
+      All C S session_id1 #i.
+        Send(S, C, 'SH', session_id1) @ #i
+        ==>
+          (Ex session_id2 content #j #k #l. Send(C, S, 'CH', session_id2) @ j 
+          & #j < #i
+          & CH_ClientHello(C, S, session_id2, content) @ k 
+          & SH_ClientHello(S, C, session_id1, content) @ l)
+    "
+
+
+/***********************************/
+// Validation V3: The trace including an authenticated client should exist
+// It should be possible to successfully authenticate the client. The authentication lemma ensures that all authentications are valid.
+// The lemma specify; There exsits a trace, where the server essablish a session key with an authenticated client
+lemma V3_It_is_possible_to_auth_the_client:
+exists-trace
+  "
+    Ex C S session_id traffic_key #i.
+      SessionKey(S, C, 'server', session_id, traffic_key, 'auth') @ i
+  "
+
+// Validation V4: The trace including an unauthenticated client should exist
+// It should be possible to successfully complete a handshake with an unauthenticated client.
+// The lemma specify; There exsits a trace, where the server essablish a session key with an unauthenticated client
+lemma V4_It_is_possible_to_not_auth_the_client:
+exists-trace
+  "
+    Ex C S session_id traffic_key #i.
+      SessionKey(S, C, 'server', session_id, traffic_key, 'not_auth') @ i
+  "
+
+// Handhsake property H1: Succesfully established sessionskeys should be the same amongst pairs.
+// When two session keys are created in a connection, the sessionkeys should be the same
+// The lemma specify; For all traces where a client and a server complete a handshake with each other, and non of the are corrupt, the sessionkeys should be the same
+// ISSUE: The adversary can change the identifiers and troll the server
+lemma H1_Establishing_the_same_session_keys:
+"
+  All C S client_session_id server_session_id keyC keyS nonce #i #j.
+    HandshakeComplete(C, S, 'client', client_session_id, keyC, nonce) @ #i 
+    & HandshakeComplete(S, C, 'server', server_session_id, keyS, nonce) @ #j
+    & not(Ex #p. Corrupt(C) @ p) 
+    & not(Ex #q. Corrupt(S) @ q)
+      ==> keyC = keyS
+"
+
+lemma H2_Session_key_secrecy[reuse]:
+"
+  All actor peer role session_id key #i.
+  SessionKey(actor, peer, role, session_id, key, 'auth') @ i 
+    & not(Ex #p. Corrupt(actor) @ p) 
+    & not(Ex #q. Corrupt(peer) @ q) 
+     ==>
+       not(Ex #j. K(key) @ j)
+"
+
+/* If the client has accepted authentication from the server, then the server must have sent their identity on a trace with equal handshake history*/
+/* ISSUE: We cant be sure on C and S... */
+lemma H3_Authentication[reuse]:
+"
+  All C S HandshakeHistory #i.
+    CommitAuth(C, S, 'client', HandshakeHistory) @ i
+    & not(Ex #p. Corrupt(C) @ p) 
+    & not(Ex #q. Corrupt(S) @ q)
+      ==> (Ex #r. Running(S, 'server', HandshakeHistory) @ r)
+"
+
+// ISSUE: The adversary can change the identifiers and troll the server
+lemma H4_Unique_session_keys[reuse]:
+"
+  All actor1 actor2 peer1 peer2 role key session_id1 session_id2 auth1 auth2 #i #j.
+    SessionKey(actor1, peer1, role, session_id1, key, auth1) @ i & SessionKey(actor2, peer2, role, session_id2, key, auth2) @ j
+      ==>
+        #i = #j
+        | (Ex #p. Corrupt(actor1) @ p)
+        | (Ex #q. Corrupt(actor2) @ q)
+        | (Ex #p. Corrupt(peer1) @ p)
+        | (Ex #q. Corrupt(peer2) @ q)
+"
+
+lemma H6_Forward_secrecy[reuse]:
+"
+All C S session_id key nonce #i #j.
+  HandshakeComplete(C, S, 'client', session_id, key, nonce) @ i 
+  & HandshakeComplete(S, C, 'server', session_id, key, nonce) @ j
+  & ((Ex #p. Corrupt(C) @ p & #j < #p) 
+  | (Ex #q. Corrupt(S) @ q & #j < #q))
+  & not((Ex #k. K(key) @ k & #k < #j))
+  ==>
+    not((Ex #k. K(key) @ k))
+"
+
+end
