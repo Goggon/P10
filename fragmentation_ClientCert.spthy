@@ -333,7 +333,6 @@ rule ServerHello:
         !Keys(<$S, $C, session_id, 'g'^~b, ga, traffic_key>),
         ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, <'1', ClientHelloCookie>, <'2', ServerHello>>),
         DHExp(~b, session_id, $S),
-        RequestCertificate($S, $C, session_id),
         Nonce($S, session_id, <crandom, srandom>),
         ServerNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat),
         ServerReceiveSeqAndEpoch(session_id, 1:nat, %rec_epoch %+ 1:nat) /*Reset sequence number*/ ]
@@ -375,7 +374,7 @@ rule EncryptedExtensions:
         !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
     --[ Send($S, $C, 'EE', session_id), Reach('EE') ]->
       [ S_Out(<DTLSCipherTextEE, $S, $C>) /*encryptedextensions encrypted*/,
-        SendSC(session_id),
+        RequestCertificate($S, $C, session_id),
         ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, <'8', EncryptedExtensions>>),
         ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch) ]
 
@@ -632,6 +631,7 @@ rule ServerCertificateRequest:
         !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
     --[ CertificateRequested('True') ]->
       [ CertificateRequested('True'),
+        SendSC(session_id),
         ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch),
         S_Out(<DTLSCipherTextCR, $S, $C>) /* server request certificate */ ]
 
@@ -639,7 +639,8 @@ rule ServerCertificateRequest:
 rule ServerNoCertificateRequest:
     [ RequestCertificate($S, $C, session_id) ]
   --[ CertificateRequested('False') ]->
-    [ CertificateRequested('False') ]
+    [ CertificateRequested('False'),
+      SendSC(session_id) ]
 
 
 
@@ -885,7 +886,7 @@ rule ClientFinishedNoAuth:
         S_In(<DTLSCipherTextCV, $S, $C>) /*servercertificateverify encrypted*/,
         S_In(<ServerDTLSCipherTextSF, $S, $C>), /*server finished*/
         ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie>) ]
-    --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CF'),
+    --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CFNoAuth'),
         SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
         FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
         Nonce($C, session_id, <crandom, srandom>),
@@ -1080,7 +1081,7 @@ rule ClientFinishedAuth:
     /******************************/
 
     /********** INCOMMING: SERVERCERTIFICATEVERIFY **********/
-    CertificateVerifySCV = 
+    ServerCertificateVerify = 
       <
         /*algorithm*/ $alg, 
         /*signature*/ serverSignature //hmac(<h1(<DTLSHandshake_CH, DTLSSH, DTLSEE, DTLSSC>), 'serverCert'>) 
@@ -1093,7 +1094,7 @@ rule ClientFinishedAuth:
           /*content*/ <
             /*HandshakeType*/ '15', /*certificate_verify(15)*/
             <lenSCV, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, %offSCV, %fragSCV>, 
-            CertificateVerify
+            ServerCertificateVerify
           >, 
           /*zeros*/ <'0'>, 
           /*ContentType*/ '22'
@@ -1171,7 +1172,7 @@ rule ClientFinishedAuth:
     ClientFinished = 
       <
         /*verify_data*/  hmac(<finished_key, 
-                              h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>)>)
+                              h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>>)>)
       >
 
     DTLSCipherText =  
@@ -1180,7 +1181,7 @@ rule ClientFinishedAuth:
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
-            <~msg_len, %next_seq, 1:nat, 1:nat>, 
+            <~msg_len, %next_seq %+ 1:nat %+ 1:nat, 1:nat, 1:nat>, 
             ClientFinished
           >, 
           /*zeros*/ <'0', '0'>, 
@@ -1207,7 +1208,7 @@ rule ClientFinishedAuth:
         !Ltk($C, clientPrivateKey),
         !ClientKeys(<$C, $S, session_id, ga, gb, traffic_key>),
         ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie>) ]
-    --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CF'),
+    --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CFAuth'),
         SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
         FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
         Nonce($C, session_id, <crandom, srandom>),
@@ -1411,7 +1412,7 @@ exists-trace
 lemma Reach_7:
 exists-trace
 "
-  Ex #i. Reach('CF') @ i
+  Ex #i. Reach('CFNoAuth') @ i
 "
 lemma Reach_8:
 exists-trace
@@ -1419,10 +1420,23 @@ exists-trace
   Ex #i. Reach('ACKNoAuth') @ i
 "
 
+lemma Reach_9_5:
+exists-trace
+"
+  Ex #i. CertificateRequested('True') @ i
+"
+
 lemma Reach_9:
 exists-trace
 "
   Ex #i #j. Reach('ACK') @ i & CertificateRequested('True') @ j
+"
+
+
+lemma Reach_10:
+exists-trace
+"
+  Ex #i. Reach('CFAuth') @ i
 "
 
 
