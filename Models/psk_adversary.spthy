@@ -12,6 +12,11 @@ macros: handshakeCryptoHeader() = </*first three bits*/ <'0','0','1'>, /*C*/ '0'
 rule Reveal_DHExp:
   [ DHExp(~x, ~tid, $A) ] --[ RevDHExp(~x, ~tid, $A), Corrupt($A) ]-> [ Out(~x) ]
 
+/* Channel rules */
+rule Secure_Chan:
+    [ S_Out(m) ]
+  --[ ]->
+    [ S_In(m) ]
 
 rule ClientHelloPsk:
   let
@@ -49,14 +54,15 @@ rule ClientHelloPsk:
       >
   in
     [ Fr(~psk_id_1),
+      Fr(~psk_1),
       Fr(~session_id),
       Fr(~a),
       Fr(~msg_len),
       Fr(~crandom) ]
   --[ Start($C, $S, 'client', ~session_id) ]->
-    [ Out(<$C, $S, ~psk_id_1>),
+    [ S_Out(<$C, $S, <~psk_id_1, ~psk_1>>),
       Out(<$C, $S, DTLSPlaintext>), /*clienthello plaintext*/
-      St_ClientHello($C, $S, ~a, ~session_id, ~crandom),
+      St_ClientHello($C, $S, <~a, ~psk_1>, ~session_id, ~crandom),
       ClientSessionHandshakeHistory($C, $S, <<'1', ClientHello>>) /*We need to save the handshake context*/,
       DHExp(~a, ~session_id, $C),
       ClientNextSeqAndEpoch(~session_id, 1:nat, 1:nat %+ 1:nat),
@@ -98,7 +104,7 @@ rule ServerHello:
         >
       >
     /********************************************/
-    traffic_key = ga^~b
+    traffic_key = <ga^~b, psk_1>
     /*************** SERVERHELLO ****************/
     ServerHello = 
       <
@@ -135,9 +141,9 @@ rule ServerHello:
       Fr(~b),
       Fr(~msg_len),
       Fr(~srandom),
-      In(<$C, $S, psk_id_1>),
+      S_In(<$C, $S, <psk_id_1, psk_1>>),
       In(<$C, $S, DTLSPlaintext>) ]
-  --[ Neq('g', ga), Neq(ga, traffic_key), /* Ensure gb is not DH_Neutral */
+  --[ Neq('g', ga), Neq(ga, ga^~b), /* Ensure gb is not DH_Neutral */
       Start($S, $C, 'server', ~session_id),
       Reach('SH') ]->
     [ Out(<$S, $C, DTLSPlaintextSH>),
@@ -261,7 +267,7 @@ rule ClientFinished:
         >
       >
     /********************************************/
-    traffic_key = gb^a
+    traffic_key = <gb^a, psk_1>
     /********** INCOMMING: ENCRYPTEDEXTENSION **********/
     EncryptedExtensions = 
       <
@@ -332,7 +338,7 @@ rule ClientFinished:
     /**********************************/
   in
     [ Fr(~msg_len),
-      St_ClientHello($C, $S, a, session_id, crandom),
+      St_ClientHello($C, $S, <a, psk_1>, session_id, crandom),
       ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
       ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
       In(<$S, $C, DTLSPlaintextSH>),
@@ -340,6 +346,8 @@ rule ClientFinished:
       In(<$S, $C, DTLSCipherTextSF>),
       ClientSessionHandshakeHistory($C, $S, <ClientHello>) ]
   --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>),
+      Eq(ClientFinished, ServerFinished),
+      Neq('g', gb), Neq(gb, gb^a), /* Ensure gb is not DH_Neutral */
       Reach('CF'),
       SessionKey($C, $S, 'client', session_id, traffic_key, 'auth') ]->
     [ Out(<$C, $S, DTLSCipherText>) ]
@@ -368,7 +376,7 @@ rule Ack:
         ServerFinished(<$S, $C, server_finished, session_id, nonce>) ]
     --[ Eq(client_finished, server_finished), Reach('ACK'),
         HandshakeComplete($S, $C, 'server', session_id, traffic_key, nonce),
-        SessionKey($S, $C, 'server', session_id, traffic_key, 'not_auth'),
+        SessionKey($S, $C, 'server', session_id, traffic_key, 'auth'),
         Send($S, $C, 'ACK', session_id) ]->
       []
 
