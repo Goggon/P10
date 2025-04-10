@@ -1541,4 +1541,31 @@ All C S session_id key nonce #i #j.
     not((Ex #k. K(key) @ k))
 "
 
+lemma R1_Confidentiality:
+"
+  All actor1 actor2 msg #i.
+    SendMsg(actor1, actor2, msg) @ i ==> not(K(msg))
+"
+
+lemma R2_Integrity:
+"
+  All actor1 actor2 msg session_key len1 len2 #i.
+    ReceivedMsg(actor1, actor2, msg, session_key, len1) @ i ==> Ex #j. SendMsg(actor2, actor1, msg, session_key, len2) @ j & #j < #i
+"
+
+lemma R3_Length_concealment:
+"
+  All actor1 actor2 msg session_key len #i.
+    SendMsg(actor1, actor2, msg, session_key, len) @ i ==> not(K(len))
+"
+
+lemma R4_Forward_Secrecy:
+"
+  All actor1 actor2 msg_old session_key_old session_key_new len #i #j #k.
+    SendMsg(actor1, actor2, msg_old, session_key_old, len) @ i
+    & not(K(msg_old) @ k)
+    & RegisterSessionkey(session_key_new) @ j
+    & #i < #j & #k < #j
+      ==> not(Ex #l. K(msg_old) @ l)
+"
 end

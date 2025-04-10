@@ -233,7 +233,7 @@ rule ServerFinished:
         ServerFinished(<$S, $C, hmac(<finished_key, h1(<ClientHello, ServerHello, EncryptedExtensions>)>), session_id, <crandom, srandom>>),
         ServerSessionHandshakeHistory($S, $C, <ClientHello, ServerHello, EncryptedExtensions, <'20', ServerFinished>>),
         ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch %+ 1:nat),
-        FinalKey($S, $C, finished_key) ]
+        SessionKey($S, $C, finished_key) ]
 
 
 rule ClientFinished:
@@ -350,7 +350,10 @@ rule ClientFinished:
       Neq('g', gb), Neq(gb, gb^a), /* Ensure gb is not DH_Neutral */
       Reach('CF'),
       SessionKey($C, $S, 'client', session_id, traffic_key, 'auth') ]->
-    [ Out(<$C, $S, DTLSCipherText>) ]
+    [ Out(<$C, $S, DTLSCipherText>),
+      SessionKey($C, $S, finished_key),
+      ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+      ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch), ]
 
 // Ack
 rule Ack:
@@ -369,16 +372,114 @@ rule Ack:
         >, traffic_key)
       >
   in
-      [ In(<$C, $S, DTLSCipherText>),
+      [ Fr(~data), Fr(~len),
+        In(<$C, $S, DTLSCipherText>),
         ServerReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch),
         !Keys(<$S, $C, session_id, gb, ga, traffic_key>),
-        FinalKey($S, $C, finished_key),
+        SessionKey($S, $C, finished_key),
         ServerFinished(<$S, $C, server_finished, session_id, nonce>) ]
     --[ Eq(client_finished, server_finished), Reach('ACK'),
         HandshakeComplete($S, $C, 'server', session_id, traffic_key, nonce),
         SessionKey($S, $C, 'server', session_id, traffic_key, 'auth'),
-        Send($S, $C, 'ACK', session_id) ]->
-      []
+        Send($S, $C, 'ACK', session_id),
+        SendMsg($S, $C, ~data, finished_key, ~len) ]->
+      [ Out(senc(<~data, ~len>, finished_key)),
+        SessionKey($S, $C, finished_key) ]
+
+rule ClientApp:
+    [ SessionKey($C, $S, key),
+      In(senc(<inc_data, inc_len>, key)),
+      Fr(~data), Fr(~len) ]
+  --[ ReceivedMsg($C, $S, inc_data, key, ind_len),
+      SendMsg($C, $S, ~data, key, ~len) ]->
+    [ Out(senc(<~data, ~len>, key)) ]
+
+rule ServerApp:
+    [ SessionKey($S, $C, key),
+      In(senc(<inc_data, inc_len>, key)),
+      Fr(~data), Fr(~len) ]
+  --[ ReceivedMsg($S, $C, inc_data, key, ind_len),
+      SendMsg($S, $C, ~data, key, ~len) ]->
+    [ Out(senc(<~data, ~len>, key)) ]
+
+rule ClientUpdateKey:
+  let
+    new_session_key = HKDFExpand(key, 'traffic_upd', 'Hash_length')
+
+    key_update = 
+      <
+        /*KeyUpdateRequest*/ '1' /*update_requested(1)*/
+      >
+
+    DTLSCipherText =
+      <
+      /*unified_hdr*/ </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ %next_epoch>, 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '24', /*key_update(24)*/
+            <lenSF, %next_seq, 1:nat, 1:nat>, 
+            key_update
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+  in
+    [ SessionKey($S, $C, key),
+      ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+      ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch), ]
+  --[  ]->
+    [ Out() ]
+
+rule ServerUpdateKeyRec:
+  let
+    /************ INCOMMING: KEYUPDATE *************/
+    new_session_key = HKDFExpand(key, 'traffic_upd', 'Hash_length')
+
+    key_update = 
+      <
+        /*KeyUpdateRequest*/ '1' /*update_requested(1)*/
+      >
+
+    DTLSCipherText =
+      <
+      /*unified_hdr*/ </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ %next_epoch>, 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '24', /*key_update(24)*/
+            <lenSF, %next_seq, 1:nat, 1:nat>, 
+            key_update
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /**************************************/
+
+    /************ KEYUPDATE RESPONSE *************/
+    key_update = 
+      <
+        /*KeyUpdateRequest*/ '0' /*update_requested(1)*/
+      >
+
+    DTLSCipherText =
+      <
+      /*unified_hdr*/ </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ %next_epoch>, 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '24', /*key_update(24)*/
+            <lenSF, %next_seq, 1:nat, 1:nat>, 
+            key_update
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /**************************************/
+  in
+    [  ]
+  --[  ]->
+    [  ]
 
 // Restriction to allow for equality checks
 restriction Equal:
@@ -535,5 +636,33 @@ All C S session_id key nonce #i #j.
   & not((Ex #k. K(key) @ k & #k < #j))
   ==>
     not((Ex #k. K(key) @ k))
+"
+
+lemma R1_Confidentiality:
+"
+  All actor1 actor2 msg #i.
+    SendMsg(actor1, actor2, msg) @ i ==> not(K(msg))
+"
+
+lemma R2_Integrity:
+"
+  All actor1 actor2 msg session_key len1 len2 #i.
+    ReceivedMsg(actor1, actor2, msg, session_key, len1) @ i ==> Ex #j. SendMsg(actor2, actor1, msg, session_key, len2) @ j & #j < #i
+"
+
+lemma R3_Length_concealment:
+"
+  All actor1 actor2 msg session_key len #i.
+    SendMsg(actor1, actor2, msg, session_key, len) @ i ==> not(K(len))
+"
+
+lemma R4_Forward_Secrecy:
+"
+  All actor1 actor2 msg_old session_key_old session_key_new len #i #j #k.
+    SendMsg(actor1, actor2, msg_old, session_key_old, len) @ i
+    & not(K(msg_old) @ k)
+    & RegisterSessionkey(session_key_new) @ j
+    & #i < #j & #k < #j
+      ==> not(Ex #l. K(msg_old) @ l)
 "
 end
