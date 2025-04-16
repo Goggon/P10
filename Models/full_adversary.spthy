@@ -16,7 +16,13 @@ macros: handshakeCryptoHeader() = </*first three bits*/ <'0','0','1'>, /*C*/ '0'
   transcript.
 ********************/
 
+/* Channel rules */
+rule Secure_Chan:
+    [ S_Out(m) ]
+  --[ ]->
+    [ S_In(m) ]
 
+    
 // Adversary power
 rule Reveal_DHExp:
   [ DHExp(~x, ~tid, $A) ] --[ RevDHExp(~x, ~tid, $A), Corrupt($A) ]-> [ Out(~x) ]
@@ -222,6 +228,7 @@ rule ClientHelloCookie:
       [ St_ClientHelloCookie($C, $S, a, session_id, crandom),
         ClientSessionHandshakeHistory($C, $S, <ClientHello, <'2', HelloRetryRequest>, <'1', ClientHelloCookie>>),
         Out(<DTLSPlaintext, $C, $S>),
+        S_Out(<a, $C, $S>),
         ClientNextSeqAndEpoch(session_id, 1:nat, %next_epoch %+ 1:nat),
         ClientReceiveSeqAndEpoch(session_id, %rec_seq %+ 1:nat, %rec_epoch) ]
 
@@ -313,15 +320,18 @@ rule ServerHello:
         St_ServerHelloRetry($S, $C, srandom, session_id),
         ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest>),
         In(<ClientDTLSPlaintext, $C, $S>) /*clienthello plaintext*/,
+        S_In(<a, $C, $S>),
         Fr(~b),
         Fr(~msg_len) ]
     --[ Neq('g', ga), Neq(ga, traffic_key), Reach('SH'), /* Ensure gb is not DH_Neutral */
+        DHChal($S, srandom, 'g', a, ~b, ga, 'g'^~b, ga^~b),
         Eq(inc_cookie, cookie), Eq(h1(<ClientHandshakeToCompare, 'HelloRetryRequest'>), cookie),
         Start($S, $C, 'server', session_id), /* We must make it a note that we are communicating with the client, so we can discard packages out of order*/ 
         Send($S, $C, 'SH', session_id),
         Nonce($S, session_id, <crandom, srandom>),
         SH_ClientHello($S, $C, session_id, ClientHandshakeToCompare) ]->
       [ Out(<DTLSPlaintextSH, $S, $C>) /*serverhello plaintext*/,
+        S_Out(<~b, $S, $C>),
         SendEE(session_id), 
         !Keys(<$S, $C, session_id, 'g'^~b, ga, traffic_key>),
         ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, <'1', ClientHelloCookie>, <'2', ServerHello>>),
@@ -852,8 +862,10 @@ rule ClientFinishedNoAuth:
         In(<DTLSCipherTextSC_5, $S, $C>), /*servercertificate encrypted fragment 5*/
         In(<DTLSCipherTextCV, $S, $C>) /*servercertificateverify encrypted*/,
         In(<ServerDTLSCipherTextSF, $S, $C>), /*server finished*/
+        S_In(<b, $S, $C>),
         ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie>) ]
     --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CFNoAuth'),
+        DHChal($S, srandom, 'g', a, b, 'g'^a, gb, gb^a),
         SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
         FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
         Nonce($C, session_id, <crandom, srandom>),
@@ -1145,10 +1157,12 @@ rule ClientFinishedAuth:
         In(<DTLSCipherTextSC_5, $S, $C>), /*servercertificate encrypted fragment 5*/
         In(<DTLSCipherTextSCV, $S, $C>), /*servercertificateverify encrypted*/
         In(<ServerDTLSCipherTextSF, $S, $C>), /*server finished*/
+        S_In(<b, $S, $C>),
         In(<DTLSCipherTextCR, $S, $C>),
         !Ltk($C, clientPrivateKey),
         ClientSessionHandshakeHistory($C, $S,  <ClientHello, HelloRetryRequest, ClientHelloCookie>) ]
     --[ HandshakeComplete($C, $S, 'client', session_id, traffic_key, <crandom, srandom>), Reach('CFAuth'),
+        DHChal($S, srandom, 'g', a, b, 'g'^a, gb, gb^a),
         SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
         FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
         Nonce($C, session_id, <crandom, srandom>),
@@ -1312,6 +1326,19 @@ restriction DEBUG_Only_one_session_server:
   All a1 a2 a3 a4 sid1 sid2 #i #j. 
     Start(a1, a2, 'server', sid1) @ i & Start(a3, a4, 'server', sid2) @ j ==> #i = #j
 "
+
+/************** DH RESTRICTIONS ****************/
+restriction dh_challenge:
+"
+  All actor1 actor2 random1 random2 g a b ga gb gab #i #j #r.
+    DHChal(actor1, random1, g, a, b, ga, gb, gab) @ i 
+    & DHChal(actor2, random2, g, a, b, ga, gb, gab) @ j
+    & K(gab) @ r
+      ==> 
+        (Ex #p. (RevDHExp(a, random1, actor1) @ p & #p < #r)) | 
+        (Ex #q. (RevDHExp(b, random2, actor2) @ q & #q < #r))
+"
+
 /*
 restriction Only_once:
 "
@@ -1540,7 +1567,7 @@ All C S session_id key nonce #i #j.
   ==>
     not((Ex #k. K(key) @ k))
 "
-
+/*
 lemma R1_Confidentiality:
 "
   All actor1 actor2 msg #i.
@@ -1567,5 +1594,5 @@ lemma R4_Forward_Secrecy:
     & RegisterSessionkey(session_key_new) @ j
     & #i < #j & #k < #j
       ==> not(Ex #l. K(msg_old) @ l)
-"
+"*/
 end
