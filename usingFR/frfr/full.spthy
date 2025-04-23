@@ -1661,6 +1661,8 @@ lemma prove_server_auth:
   All C S history session_idC #i #j.
     Send(C, S, 'CF', session_idC) @ i
     & CommitAuth(C, S, 'client', history) @ j
+    & not(Ex #p. Corrupt(C) @ p) 
+    & not(Ex #q. Corrupt(S) @ q)
       ==>
       (Ex session_idS #k. Send(S, C, 'SF', session_idS) @ k & #k < #i)
       & (Ex #l. Running(S, C, 'server', history) @ l)
