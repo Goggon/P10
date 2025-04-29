@@ -1,0 +1,140 @@
+theory record_layer
+begin
+
+builtins: hashing, diffie-hellman, symmetric-encryption, asymmetric-encryption, signing, natural-numbers
+
+functions: HKDFExpand/1, hmac/1, h1/1
+
+rule ClientAppAck:
+  [ Fr(client_session_id),
+    Fr(server_session_id),
+    Fr(session_key),
+    Fr(~data), Fr(~len) ]
+--[ Start(),
+    SendMsg($C, $S, ~data, session_key, ~len) ]->
+  [ Out(senc(<~data, ~len>, session_key)),
+    !ClientSessionKey($C, $S, client_session_id, session_key),
+    !ServerSessionKey($S, $C, server_session_id, session_key),
+    ClientSeqAndEpochAPP(client_session_id, 1:nat, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, 1:nat, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat),
+    ServerSeqAndEpochAPP(server_session_id, 1:nat, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat, 1:nat, 1:nat %+ 1:nat %+ 1:nat %+ 1:nat) ]
+        
+rule ServerApp:
+    [ !ServerSessionKey($S, $C, session_id, session_key),
+      ServerSeqAndEpochAPP(session_id, %next_seq, %next_epoch, %rec_seq, %rec_epoch),
+      In(senc(<$S, $C, inc_data, inc_len, %rec_seq, %rec_epoch>, session_key)),
+      Fr(~data), Fr(~len) ]
+  --[ ReceivedMsg($S, $C, inc_data, session_key, inc_len),
+      SendMsg($S, $C, ~data, session_key, ~len) ]->
+    [ ServerSeqAndEpochAPP(session_id, %next_seq %+ 1:nat, %next_epoch, %rec_seq %+ 1:nat, %rec_epoch),
+      Out(senc(<~data, ~len, %next_seq, %next_epoch>, session_key)) ]
+
+rule ClientApp:
+    [ !ClientSessionKey($C, $S, session_id, session_key),
+      ClientSeqAndEpochAPP(session_id, %next_seq, %next_epoch, %rec_seq, %rec_epoch),
+      In(senc(<$C, $S, inc_data, inc_len, %rec_seq, %rec_epoch>, session_key)),
+      Fr(~data), Fr(~len) ]
+  --[ ReceivedMsg($C, $S, inc_data, session_key, inc_len),
+      SendMsg($C, $S, ~data, session_key, ~len) ]->
+    [ ClientSeqAndEpochAPP(session_id, %next_seq %+ 1:nat, %next_epoch, %rec_seq %+ 1:nat, %rec_epoch),
+      Out(senc(<~data, ~len, %next_seq, %next_epoch>, session_key)) ]
+
+rule ClientUpdateKey:
+  let
+    new_session_key = HKDFExpand(session_key, 'traffic_upd', 'Hash_length')
+
+    DTLSCipherText =
+      <
+      /*unified_hdr*/ </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ %next_epoch>, 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '24', /*key_update(24)*/
+            <lenSF, %next_seq, 1:nat, 1:nat>, 
+            <'1'>
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, session_key)
+      >
+  in
+    [ !ClientSessionKey($C, $S, session_key)
+      ClientNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
+      ClientReceiveSeqAndEpoch(session_id, %rec_seq, %rec_epoch) ]
+  --[  ]->
+    [ Out(DTLSCipherText) ]
+  
+rule ServerUpdateKeyRec:
+  let
+    /************ INCOMMING: KEYUPDATE *************/
+    new_session_key = HKDFExpand(key, 'traffic_upd', 'Hash_length')
+
+    key_update = 
+      <
+        /*KeyUpdateRequest*/ '1' /*update_requested(1)*/
+      >
+
+    DTLSCipherText =
+      <
+      /*unified_hdr*/ </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ %rec_epoch>, 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '24', /*key_update(24)*/
+            <lenSF, %rec_seq, 1:nat, 1:nat>, 
+            key_update
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /**************************************/
+
+    /************ KEYUPDATE RESPONSE *************/
+    DTLSCipherTextKR =
+      <
+      /*unified_hdr*/ </*first three bits*/ <'0','0','1'>, /*C*/ '0', /*S*/ '1', /*L*/ '1', /*E*/ %next_epoch>, 
+        /*encrypted_record*/ senc(<
+          /*content*/ <
+            /*HandshakeType*/ '24', /*key_update(24)*/
+            <lenSF, %next_seq, 1:nat, 1:nat>, 
+            <'0'>
+          >, 
+          /*zeros*/ <'0'>, 
+          /*ContentType*/ '22'
+        >, traffic_key)
+      >
+    /**************************************/
+  in
+    [ In(DTLSCipherText) ]
+  --[  ]->
+    [  ]
+
+
+lemma R1_Confidentiality:
+"
+  All actor1 actor2 msg session_key len #i #j.
+    SendMsg(actor1, actor2, msg, session_key, len) @ i & K(msg) @ j ==> Ex #l. K(session_key) @ l 
+"
+    
+lemma R2_Integrity:
+"
+  All actor1 actor2 msg session_key len #i.
+    ReceivedMsg(actor1, actor2, msg, session_key, len) @ i & not(Ex #l. K(session_key) @ l & #l < #i) 
+      ==> Ex #j. SendMsg(actor2, actor1, msg, session_key, len) @ j & #j < #i
+"
+    
+lemma R3_Length_concealment:
+"
+  All actor1 actor2 msg session_key len #i.
+    SendMsg(actor1, actor2, msg, session_key, len) @ i ==> not(Ex #j. K(len) @ j)
+"
+
+lemma R4_Forward_Secrecy:
+"
+  All actor1 actor2 msg_old session_key_old session_key_new len #i #j #k.
+    SendMsg(actor1, actor2, msg_old, session_key_old, len) @ i
+    & not(K(msg_old) @ k)
+    & RegisterSessionkey(session_key_new) @ j
+    & #i < #j & #k < #j
+      ==> not(Ex #l. K(msg_old) @ l)
+"
+
+end
