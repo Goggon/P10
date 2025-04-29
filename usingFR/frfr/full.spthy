@@ -639,9 +639,9 @@ rule ServerCertificateRequest:
         ServerNextSeqAndEpoch(session_id, %next_seq, %next_epoch),
         RequestCertificate($S, $C, session_id),
         !Keys(<$S, $C, session_id, gb, ga, traffic_key>) ]
-    --[ CertificateRequested($S, $C, 'True'), 
+    --[ CertificateRequested($S, $C, 'True', session_id), 
         S_SeqEpoch($C, session_id, %next_seq, %next_epoch) ]->
-      [ CertificateRequested($S, $C, 'True'),
+      [ CertificateRequested($S, $C, 'True', session_id),
         SendSC(session_id),
         ServerNextSeqAndEpoch(session_id, %next_seq %+ 1:nat, %next_epoch),
         S_Out(<DTLSCipherTextCR, $S, $C>) /* server request certificate */ ]
@@ -649,8 +649,8 @@ rule ServerCertificateRequest:
 // ServerNoCertificateRequest
 rule ServerNoCertificateRequest:
     [ RequestCertificate($S, $C, session_id) ]
-  --[ CertificateRequested($S, $C, 'False') ]->
-    [ CertificateRequested($S, $C, 'False'),
+  --[ CertificateRequested($S, $C, 'False', session_id) ]->
+    [ CertificateRequested($S, $C, 'False', session_id),
       SendSC(session_id) ]
 
 
@@ -1259,7 +1259,7 @@ rule Ack:
         FinalKey($S, $C, finished_key),
         ServerSessionHandshakeHistory($S, $C, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>),
         ServerFinished(<$S, $C, server_finished, session_id, nonce>),
-        CertificateRequested($S, $C, auth_status) ]
+        CertificateRequested($S, $C, auth_status, session_id) ]
     --[ Eq(client_finished, server_finished), 
         Eq(auth_status, 'True'), Reach('ACK'),
         Eq(verify(clientSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>), 'clientCert'>), clientPublicKey), true),
@@ -1291,7 +1291,7 @@ rule AckNoAuth:
         !Keys(<$S, $C, session_id, gb, ga, traffic_key>),
         FinalKey($S, $C, finished_key),
         ServerFinished(<$S, $C, server_finished, session_id, nonce>),
-        CertificateRequested($S, $C, auth_status) ]
+        CertificateRequested($S, $C, auth_status, session_id) ]
     --[ Eq(client_finished, server_finished), Eq(auth_status, 'False'), Reach('ACKNoAuth'),
         HandshakeComplete($S, $C, 'server', session_id, traffic_key, nonce),
         SessionKey($S, $C, 'server', session_id, traffic_key, 'not_auth'),
@@ -1386,13 +1386,13 @@ exists-trace
 lemma Reach_9_5:
 exists-trace
 "
-  Ex #i. CertificateRequested($S, $C, 'True') @ i
+  Ex S C session_id #i. CertificateRequested(S, C, 'True', session_id) @ i
 "
 
 lemma Reach_9:
 exists-trace
 "
-  Ex #i #j. Reach('ACK') @ i & CertificateRequested($S, $C, 'True') @ j
+  Ex S C session_id #i #j. Reach('ACK') @ i & CertificateRequested(S, C, 'True', session_id) @ j
 "
 
 
@@ -1578,17 +1578,20 @@ lemma SC_before_SF_and_after_SH:
 
 lemma client_cert_when_req:
   "
-  All C S session_id #i.
-    Send(C, S, 'CC', session_id) @ i
+  All C S session_idC #i.
+    Send(C, S, 'CC', session_idC) @ i
     ==>
-      (Ex #j. CertificateRequested(S, C, 'True') @ j & #j < #i)
+      (Ex session_idS #j. CertificateRequested(S, C, 'True', session_idS) @ j & #j < #i)
   "
 
-no_client_cert_req:
+lemma no_client_cert_req:
   "
-  not Ex C S session_id #i.
-    Send(C, S, 'CC', session_id) @ i
-    & (Ex #j. CertificateRequested(S, C, 'False') @ j & #j < #i)
+  All C S session_idC #i.
+    Send(C, S, 'CF', session_idC) @ i
+    & (Ex session_idS #j. CertificateRequested(S, C, 'False', session_idS) @ j & #j < #i)
+    ==>
+      not(Ex #k. Send(C, S, 'CC', session_idC) @ k)
+  "
 
 lemma SH_after_cookie:
   "
