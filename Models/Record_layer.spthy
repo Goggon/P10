@@ -48,6 +48,8 @@ rule ClientApp:
     [ ClientSeqAndEpochAPP(session_id, %next_seq %+ 1:nat, %next_epoch, %rec_seq %+ 1:nat, %rec_epoch),
       S_Out(senc(<~data, ~len, %next_seq, %next_epoch>, session_key_send)) ]
 
+
+/********************** CLIENT START ***********************/
 rule ClientUpdateKey:
   let
     DTLSCipherText =
@@ -114,7 +116,7 @@ rule ServerUpdateKeyRec:
       !ServerSessionKeyRec($S, $C, session_id, %rec_epoch, session_key_rec),
       ServerSeqAndEpochAPP(session_id, %next_seq, %next_epoch, %rec_seq, %rec_epoch),
       S_In(DTLSCipherText) ]
-  --[ /*RegisterSessionkey(new_session_key)*/ ]->
+  --[ RegisterSessionkey('server', 'rec', new_session_key) ]->
     [ S_Out(DTLSCipherTextACK),
       ServerSeqAndEpochAPP(session_id, %next_seq, %next_epoch, 1:nat, %rec_epoch %+ 1:nat),
       !ServerSessionKeyRec($S, $C, session_id, %rec_epoch %+ 1:nat, new_session_key) ]
@@ -139,11 +141,12 @@ rule ClientRecACK:
       !ClientSessionKeySend($C, $S, session_id, %next_epoch, session_key_send),
       !ClientSessionKeyRec($C, $S, client_session_id, %rec_epoch, session_key_rec),
       ClientSeqAndEpochAPP(session_id, %next_seq, %next_epoch, %rec_seq, %rec_epoch) ]
-  --[ RegisterSessionkey(new_session_key) ]->
+  --[ RegisterSessionkey('client', 'send', new_session_key) ]->
     [ !ClientSessionKeySend($C, $S, session_id, %next_epoch %+ 1:nat, new_session_key),
       ClientSeqAndEpochAPP(session_id, 1:nat, %next_epoch %+ 1:nat, %rec_seq, %rec_epoch) ]
 
-
+/***********************************************************/
+/********************** SERVER START ***********************/
 rule ServerUpdateKey:
   let
     /************ KEYUPDATE RESPONSE *************/
@@ -207,7 +210,7 @@ rule ClientUpdateKeyRec:
       !ClientSessionKeyRec($S, $C, session_id, %rec_epoch, session_key_rec),
       ClientSeqAndEpochAPP(session_id, %next_seq, %next_epoch, %rec_seq, %rec_epoch),
       S_In(DTLSCipherText) ]
-  --[  ]->
+  --[ RegisterSessionkey('client', 'rec', new_session_key) ]->
     [ ClientSeqAndEpochAPP(session_id, %next_seq %+ 1:nat, %next_epoch, 1:nat, %rec_epoch %+ 1:nat),
       !ClientSessionKeyRec($S, $C, session_id, %rec_epoch %+ 1:nat, new_session_key) ]
 
@@ -231,15 +234,16 @@ rule ServerRecACK:
         !ServerSessionKeyRec($C, $S, client_session_id, %rec_epoch, session_key_rec),
         !ServerSessionKeySend($C, $S, session_id, %next_epoch %+ 1:nat, session_key_send),
         ServerSeqAndEpochAPP(session_id, %next_seq, %next_epoch, %rec_seq, %rec_epoch) ]
-    --[ RegisterSessionkey(new_session_key) ]->
+    --[ RegisterSessionkey('server', 'send', new_session_key) ]->
       [ !ServerSessionKeySend($C, $S, session_id, %next_epoch %+ 1:nat, new_session_key),
         ServerSeqAndEpochAPP(session_id, 1:nat, %next_epoch %+ 1:nat, %rec_seq, %rec_epoch) ]
+/***********************************************************/
 
 lemma Reachability:
 exists-trace
 "
-  Ex session_key #i.
-    RegisterSessionkey(session_key) @ i
+  Ex role type session_key #i.
+    RegisterSessionkey(role, type, session_key) @ i
 "
 
 lemma R1_Confidentiality:
@@ -263,10 +267,10 @@ lemma R3_Length_concealment:
 
 lemma R4_Forward_Secrecy:
 "
-  All actor1 actor2 msg_old session_key_old session_key_new len #i #j.
+  All actor1 actor2 role msg_old session_key_old session_key_new len #i #j.
     SendMsg(actor1, actor2, msg_old, session_key_old, len) @ i
     & not(Ex #k. K(msg_old) @ k & #k < #j)
-    & RegisterSessionkey(session_key_new) @ j
+    & RegisterSessionkey(role, 'send', session_key_new) @ j
     & #i < #j
       ==> not(Ex #l. K(msg_old) @ l)
 "
