@@ -23,6 +23,9 @@ rule Reveal_DHExp:
 rule Reveal_LTK:
   [ !Ltk($A, ~ltk) ] --[ Corrupt($A) ]-> [ Out(~ltk) ]
 
+rule Drop:
+  [ In(x) ] --> [  ]
+
 // Asym key setup
 rule Register_pk:
     [ Fr(~ltk) ]
@@ -1640,11 +1643,11 @@ lemma H2_Session_key_secrecy[reuse]:
 /* ISSUE: We cant be sure on C and S... */
 lemma H3_Authentication[reuse]:
 "
-  All C S HandshakeHistory #i.
-    CommitAuth(C, S, 'client', HandshakeHistory) @ i
+  All actor1 actor2 role1 role2 HandshakeHistory #i.
+    CommitAuth(actor1, actor2, role1, HandshakeHistory) @ i
     & not(Ex #p. Corrupt(C) @ p) 
     & not(Ex #q. Corrupt(S) @ q)
-      ==> (Ex #r. Running(S, 'server', HandshakeHistory) @ r)
+      ==> (Ex #r. Running(actor2, role2, HandshakeHistory) @ r)
 "
 
 // ISSUE: The adversary can change the identifiers and troll the server
