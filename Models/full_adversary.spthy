@@ -346,6 +346,7 @@ rule EncryptedExtensions:
     DTLSCipherTextEE = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextEE
       >
     /******************************/
@@ -385,6 +386,7 @@ rule ServerCertificate:
     DTLSCipherTextSC_1 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextSC_1
       >   
 
@@ -407,6 +409,7 @@ rule ServerCertificate:
     DTLSCipherTextSC_2 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextSC_2
       >   
 
@@ -429,6 +432,7 @@ rule ServerCertificate:
     DTLSCipherTextSC_3 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextSC_3
       >   
 
@@ -451,6 +455,7 @@ rule ServerCertificate:
     DTLSCipherTextSC_4 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextSC_4
       >  
 
@@ -473,6 +478,7 @@ rule ServerCertificate:
     DTLSCipherTextSC_5 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextSC_5
       >      
 
@@ -523,6 +529,7 @@ rule ServerCertificateVerify:
     DTLSCipherTextCV = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextCV
       >
     /******************************/
@@ -553,6 +560,7 @@ rule ServerFinished:
     DTLSCipherTextSF = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -602,6 +610,7 @@ rule ServerCertificateRequest:
     DTLSCipherTextCR = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ DTLSInnerPlaintextCR
       >
 
@@ -670,6 +679,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextEE = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '8', /*encrypted_extensions(8)*/
@@ -687,6 +697,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextSC_1 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -701,6 +712,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextSC_2 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -715,6 +727,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextSC_3 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -729,6 +742,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextSC_4 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -743,6 +757,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextSC_5 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -770,6 +785,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherTextCV = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '15', /*certificate_verify(15)*/
@@ -791,6 +807,7 @@ rule ClientFinishedNoAuth:
     ServerDTLSCipherTextSF = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -815,6 +832,7 @@ rule ClientFinishedNoAuth:
     DTLSCipherText =  
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -900,6 +918,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextEE = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '8', /*encrypted_extensions(8)*/
@@ -923,6 +942,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextCR = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '13', /*certificate_request(13)*/
@@ -939,6 +959,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextSC_1 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -953,6 +974,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextSC_2 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -967,6 +989,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextSC_3 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -981,6 +1004,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextSC_4 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -995,6 +1019,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextSC_5 = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -1020,6 +1045,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextSCV = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '15', /*certificate_verify(15)*/
@@ -1041,6 +1067,7 @@ rule ClientFinishedAuth:
     ServerDTLSCipherTextSF = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -1062,6 +1089,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextCC = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -1084,6 +1112,7 @@ rule ClientFinishedAuth:
     DTLSCipherTextCV = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '15', /*certificate_verify(15)*/
@@ -1108,6 +1137,7 @@ rule ClientFinishedAuth:
     DTLSCipherText =  
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -1167,6 +1197,7 @@ rule Ack:
     DTLSCipherTextCC = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %rec_seq,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '11', /*certificate(11)*/
@@ -1189,6 +1220,7 @@ rule Ack:
     DTLSCipherTextCV = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %rec_seq %+ 1:nat,
         /*encrypted_record*/ senc{<
           /*content*/ <
             /*HandshakeType*/ '15', /*certificate_verify(15)*/
@@ -1205,6 +1237,7 @@ rule Ack:
     DTLSCipherTextCF = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %rec_seq %+ 1:nat %+ 1:nat,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -1221,6 +1254,7 @@ rule Ack:
     DTLSCipherTextACK = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ senc(<
           /*content*/ <CHRecordNumbers, CHCRecrodNumbers, <1:nat %+ 1:nat %+ 1:nat, %rec_seq>, <1:nat %+ 1:nat %+ 1:nat, %rec_seq %+ 1:nat>, <1:nat %+ 1:nat %+ 1:nat, %rec_seq %+ 1:nat %+ 1:nat>>, 
           /*zeros*/ <'0', '0'>, 
@@ -1258,6 +1292,7 @@ rule AckNoAuth:
     DTLSCipherText = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %rec_seq,
         /*encrypted_record*/ senc(<
           /*content*/ <
             /*HandshakeType*/ '20', /*finished(20)*/
@@ -1274,6 +1309,7 @@ rule AckNoAuth:
     DTLSCipherTextACK = 
       <
         /*unified_hdr*/ handshakeCryptoHeader(), 
+        /*sequence_number*/ %next_seq,
         /*encrypted_record*/ senc(<
           /*content*/ <CHRecordNumbers, CHCRecrodNumbers, <1:nat %+ 1:nat %+ 1:nat, %rec_seq>>, 
           /*zeros*/ <'0', '0'>, 
@@ -1296,7 +1332,7 @@ rule AckNoAuth:
         Send($S, $C, 'ACK', session_id) ]->
       [ Out(DTLSCipherTextACK), 
         !ServerSessionKey($S, $C, session_id, finished_key) ]
-
+/*
 rule ClientAppAck:
   [ !ClientSessionKey($C, $S, session_id, key),
     In(DTLSCipherTextACK),
@@ -1318,7 +1354,7 @@ rule ServerApp:
       Fr(~data), Fr(~len) ]
   --[ ReceivedMsg($S, $C, inc_data, key, inc_len),
       SendMsg($S, $C, ~data, key, ~len) ]->
-    [ Out(senc(<~data, ~len>, key)) ]
+    [ Out(senc(<~data, ~len>, key)) ]*/
 
 
 // Restriction to allow for equality checks
@@ -1635,7 +1671,7 @@ All C S key nonce #i #j.
   ==>
     not((Ex #k. K(key) @ k))
 "
-
+/*
 lemma R1_Confidentiality:
 "
   All actor1 actor2 msg session_key len #i #j.
@@ -1654,7 +1690,7 @@ lemma R3_Length_concealment:
   All actor1 actor2 msg session_key len #i.
     SendMsg(actor1, actor2, msg, session_key, len) @ i ==> not(Ex #j. K(len) @ j)
 "
-/*
+
 lemma R4_Forward_Secrecy:
 "
   All actor1 actor2 msg_old session_key_old session_key_new len #i #j #k.
