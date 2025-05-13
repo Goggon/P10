@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>// Place global declarations here.
+int id_identifier = 1;
+int a_identifier = 2;
+int b_identifier = 3;
+int x_identifier = 4;
+int y_identifier = 5;
+int A_identifier = 6;
+int B_identifier = 7;
+
+int id = 1;
+int x = 1;
+int y = 1;
+int a = 1;
+int b = 1;
+int A = 1;
+int B = 1;
+
+typedef struct {
+    int name;
+    int number;
+} variable;
+
+variable var1;
+variable var2;
+variable var3;
+variable var4;
+variable var5;
+
+variable message[4];
+
+chan In, Out;
+void msg(variable incomming[4]) {
+    message = incomming;
+}
+
+broadcast chan Fact_A1;
+void Fact_A1_func(int id, int a) {
+    // Variable 1
+    var1.name = id_identifier;
+    var1.number = id;
+
+    // Variable 2
+    var2.name = a_identifier;
+    var2.number = a;
+}
+
+broadcast chan Fact_A2;
+void Fact_A2_func(int id, int b) {
+    // Variable 1
+    var1.name = id_identifier;
+    var1.number = id;
+
+    // Variable 2
+    var2.name = b_identifier;
+    var2.number = b;
+}
+
+broadcast chan Fact_B1;
+void Fact_B1_func(int id, int x) {
+    // Variable 1
+    var1.name = id_identifier;
+    var1.number = id;
+
+    // Variable 2
+    var2.name = x_identifier;
+    var2.number = x;
+}
+
+broadcast chan Fact_B2;
+void Fact_B2_func(int id, int y) {
+    // Variable 1
+    var1.name = id_identifier;
+    var1.number = id;
+
+    // Variable 2
+    var2.name = y_identifier;
+    var2.number = y;
+}
+
+broadcast chan DoneB, DoneA;
+
+void get_in4(variable &amp;msg[4]) {
+    msg[0].name = message[0].name;
+    msg[0].number = message[0].number;
+
+    msg[1].name = message[1].name;
+    msg[1].number = message[1].number;
+
+    msg[2].name = message[2].name;
+    msg[2].number = message[2].number;
+
+    msg[3].name = message[3].name;
+    msg[3].number = message[3].number; 
+}
+
+</declaration>
+	<template>
+		<name>A2</name>
+		<declaration>variable in1[4];
+
+bool premis[3] = {false, false, false};
+bool premis_check() {
+    return premis[0] &amp;&amp; premis[1] &amp;&amp; premis[2];
+}
+
+bool global_check() {
+    return in1[0].name == B_identifier &amp;&amp; in1[1].name == A_identifier;
+}
+
+variable Fact_A1_var1;
+variable Fact_A1_var2;
+void get_Fact_A1() {
+    Fact_A1_var1 = var1;
+    Fact_A1_var2 = var2;
+}
+
+variable Fact_A2_var1;
+variable Fact_A2_var2;
+void get_Fact_A2() {
+    Fact_A2_var1 = var1;
+    Fact_A2_var2 = var2;
+}
+
+
+
+bool pattern_match_check() {
+    return Fact_A1_var1.name == Fact_A2_var1.name &amp;&amp; Fact_A1_var1.number == Fact_A2_var1.number;
+}
+
+void reset() {
+    premis[0] = false;
+    premis[1] = false;
+    premis[2] = false;
+}</declaration>
+		<location id="id0" x="59" y="-25">
+			<committed/>
+		</location>
+		<location id="id1" x="-102" y="-25">
+		</location>
+		<location id="id2" x="-280" y="-25">
+		</location>
+		<location id="id3" x="-280" y="-246">
+		</location>
+		<init ref="id2"/>
+		<transition id="id4">
+			<source ref="id3"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-348" y="-127">!global_check()</label>
+			<label kind="synchronisation" x="-306" y="-144">In!</label>
+		</transition>
+		<transition id="id5">
+			<source ref="id3"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-459" y="-178">global_check()</label>
+			<label kind="assignment" x="-484" y="-161">premis[2] = true</label>
+			<nail x="-374" y="-110"/>
+		</transition>
+		<transition id="id6">
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-314" y="25">!premis[1]</label>
+			<label kind="synchronisation" x="-314" y="42">Fact_A2?</label>
+			<label kind="assignment" x="-340" y="59">premis[1] = true,
+get_Fact_A2()</label>
+			<nail x="-314" y="25"/>
+			<nail x="-246" y="25"/>
+		</transition>
+		<transition id="id7">
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-501" y="-68">!premis[0]</label>
+			<label kind="synchronisation" x="-501" y="-51">Fact_A1?</label>
+			<label kind="assignment" x="-501" y="-34">premis[0] = true,
+get_Fact_A1()</label>
+			<nail x="-357" y="-76"/>
+			<nail x="-357" y="17"/>
+		</transition>
+		<transition id="id8">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="guard" x="-186" y="-144">!premis[2]</label>
+			<label kind="synchronisation" x="-178" y="-161">In?</label>
+			<label kind="assignment" x="-178" y="-127">get_in4(in1)</label>
+			<nail x="-195" y="-110"/>
+		</transition>
+		<transition id="id9">
+			<source ref="id0"/>
+			<target ref="id2"/>
+			<label kind="assignment" x="-127" y="42">reset()</label>
+			<nail x="-25" y="42"/>
+			<nail x="-204" y="42"/>
+		</transition>
+		<transition id="id10">
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="-42" y="-51">DoneA!</label>
+		</transition>
+		<transition id="id11">
+			<source ref="id2"/>
+			<target ref="id1"/>
+			<label kind="guard" x="-246" y="-76">premis_check() &amp;&amp;
+pattern_match_check()</label>
+		</transition>
+	</template>
+	<template>
+		<name>Adversary</name>
+		<location id="id12" x="110" y="0">
+			<committed/>
+		</location>
+		<location id="id13" x="0" y="0">
+		</location>
+		<init ref="id13"/>
+		<transition id="id14">
+			<source ref="id12"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="51" y="68">In!</label>
+			<nail x="59" y="59"/>
+		</transition>
+		<transition id="id15">
+			<source ref="id13"/>
+			<target ref="id12"/>
+			<label kind="synchronisation" x="42" y="-17">Out?</label>
+		</transition>
+	</template>
+	<template>
+		<name>B1</name>
+		<declaration>// Place local declarations here.
+
+
+bool premis[1] = {false};
+bool premis_check() {
+    return premis[0];
+}
+
+variable Fact_B1_var1;
+variable Fact_B1_var2;
+void get_Fact_B1() {
+    Fact_B1_var1 = var1;
+    Fact_B1_var2 = var2;
+}
+
+variable Fact_B2_var1;
+variable Fact_B2_var2;
+void get_Fact_B2() {
+    Fact_B2_var1 = var1;
+    Fact_B2_var2 = var2;
+}
+
+variable in1[4];
+
+void out_func(int B, int A, int a, int b) {
+    message[0].name = B_identifier;
+    message[0].number = B;
+
+    message[1].name = A_identifier;
+    message[1].number = A;
+
+    message[2].name = a_identifier;
+    message[2].number = a;
+
+    message[3].name = b_identifier;
+    message[3].number = b;
+}
+
+void reset() {
+    premis[0] = false;
+    id += 1;
+    x += 1;
+    y += 1;
+}</declaration>
+		<location id="id16" x="-289" y="-51">
+		</location>
+		<location id="id17" x="-93" y="-51">
+		</location>
+		<location id="id18" x="93" y="-51">
+		</location>
+		<location id="id19" x="93" y="34">
+		</location>
+		<location id="id20" x="-93" y="34">
+		</location>
+		<location id="id21" x="-289" y="34">
+			<committed/>
+		</location>
+		<init ref="id16"/>
+		<transition id="id22">
+			<source ref="id21"/>
+			<target ref="id16"/>
+			<label kind="assignment" x="-289" y="-8">reset()</label>
+		</transition>
+		<transition id="id23">
+			<source ref="id16"/>
+			<target ref="id16"/>
+			<label kind="guard" x="-467" y="-85">premis[0]</label>
+			<label kind="synchronisation" x="-442" y="-102">In!</label>
+			<label kind="assignment" x="-518" y="-59">premis[0] = false</label>
+			<nail x="-365" y="-102"/>
+			<nail x="-365" y="-17"/>
+		</transition>
+		<transition id="id24">
+			<source ref="id16"/>
+			<target ref="id16"/>
+			<label kind="guard" x="-331" y="-187">!premis[0]</label>
+			<label kind="synchronisation" x="-314" y="-204">In?</label>
+			<label kind="assignment" x="-348" y="-170">premis[0] = true,
+get_in4(in1)</label>
+			<nail x="-255" y="-127"/>
+			<nail x="-323" y="-127"/>
+		</transition>
+		<transition id="id25">
+			<source ref="id20"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="-221" y="8">DoneB!</label>
+		</transition>
+		<transition id="id26">
+			<source ref="id19"/>
+			<target ref="id20"/>
+			<label kind="synchronisation" x="-25" y="8">Out!</label>
+			<label kind="assignment" x="-110" y="51">out_func(in1[1].number, in1[0].number, x, y)</label>
+		</transition>
+		<transition id="id27">
+			<source ref="id18"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="102" y="-17">Fact_B2!</label>
+			<label kind="assignment" x="102" y="0">Fact_B2_func(id, y)</label>
+		</transition>
+		<transition id="id28">
+			<source ref="id17"/>
+			<target ref="id18"/>
+			<label kind="synchronisation" x="-25" y="-76">Fact_B1!</label>
+			<label kind="assignment" x="-75" y="-51">Fact_B1_func(id, x)</label>
+		</transition>
+		<transition id="id29">
+			<source ref="id16"/>
+			<target ref="id17"/>
+			<label kind="guard" x="-263" y="-76">premis_check()</label>
+		</transition>
+	</template>
+	<template>
+		<name x="5" y="5">A1</name>
+		<declaration>// Place local declarations here.
+
+void out_func(int A, int B, int a, int b) {
+    message[0].name = A_identifier;
+    message[0].number = A;
+
+    message[1].name = B_identifier;
+    message[1].number = B;
+
+    message[2].name = a_identifier;
+    message[2].number = a;
+
+    message[3].name = b_identifier;
+    message[3].number = b;
+}
+
+void reset() {
+    id += 1;
+    a += 1;
+    b += 1;
+    A++;
+    B++;
+}</declaration>
+		<location id="id30" x="-535" y="-68">
+		</location>
+		<location id="id31" x="-314" y="-68">
+		</location>
+		<location id="id32" x="-85" y="-68">
+		</location>
+		<location id="id33" x="-314" y="51">
+			<committed/>
+		</location>
+		<init ref="id30"/>
+		<transition id="id34">
+			<source ref="id33"/>
+			<target ref="id30"/>
+			<label kind="assignment" x="-484" y="17">reset()</label>
+			<nail x="-535" y="-25"/>
+		</transition>
+		<transition id="id35">
+			<source ref="id32"/>
+			<target ref="id33"/>
+			<label kind="synchronisation" x="-187" y="17">Out!</label>
+			<label kind="assignment" x="-221" y="34">out_func(A, B, a, b)</label>
+			<nail x="-85" y="-25"/>
+		</transition>
+		<transition id="id36">
+			<source ref="id31"/>
+			<target ref="id32"/>
+			<label kind="synchronisation" x="-246" y="-93">Fact_A2!</label>
+			<label kind="assignment" x="-289" y="-68">Fact_A2_func(id, b)</label>
+		</transition>
+		<transition id="id37">
+			<source ref="id30"/>
+			<target ref="id31"/>
+			<label kind="synchronisation" x="-459" y="-93">Fact_A1!</label>
+			<label kind="assignment" x="-510" y="-68">Fact_A1_func(id, a)</label>
+		</transition>
+	</template>
+	<system>// Place template instantiations here.
+Rule1 = A1();
+Rule2 = B1();
+Rule3 = A2();
+
+Ad = Adversary();
+
+// List one or more processes to be composed into a system.
+system A1, B1, A2, Ad;
+</system>
+	<queries>
+		<query>
+			<formula>A[] not deadlock </formula>
+			<comment/>
+		</query>
+	</queries>
+</nta>
