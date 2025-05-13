@@ -1,0 +1,43 @@
+theory small_example
+begin
+
+/* Channel rules */
+rule Secure_Chan:
+    [ S_Out(m) ]
+  --[ ]->
+    [ S_In(m) ]
+
+rule A1:
+    [ Fr(~id),
+      Fr(~a),
+      Fr(~b) ]
+  --[ Reach('A1') ]->
+    [ Fact_A1(~id, ~a),
+      Fact_A2(~id, ~b),
+      S_Out(<$As, $Bs, ~a, ~b>) ]
+
+rule B1:
+    [ Fr(~id),
+      Fr(~x),
+      Fr(~y),
+      S_In(<$As, $Bs, a, b>) ]
+  --[ Reach('B1') ]->
+    [ Fact_B1(~id, ~x),
+      Fact_B2(~id, ~y),
+      S_Out(<$Bs, $As, ~x, ~y>),
+      DoneB(<~x, ~y, a, b>) ]
+
+rule A2:
+    [ Fact_A1(id, a),
+      Fact_A2(id, b),
+      S_In(<$Bs, $As, x, y>) ]
+  --[ Reach('A2') ]->
+    [ DoneA(<a, b, x, y>) ]
+
+lemma test:
+exists-trace
+" 
+  Ex #i. Reach('A2') @ i
+"
+
+end
