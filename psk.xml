@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>broadcast chan S_out, St_ClientHello, ClientSessionHandshakeHistory, ClientNextSeqAndEpoch, ClientRecSeqAndEpoch, DHExp;
+
+// Different variables types
+int cost = -1;
+int str = -2;
+int nat = -3;
+
+// All string ids
+int s_CipherSuits = -1;
+int s_41 = -2;
+int s_45 = -3;
+int s_1 = -4;
+int s_51 = -5;
+int s_g = -6;
+int s_22 = -7;
+int s_ga = -8;
+
+// All varibles ids
+int psk_id_1_id = 1;
+int psk_1_id = 2;
+int session_id_id = 3;
+int a_id = 4;
+int msg_len_id = 5;
+int crandom_id = 6;
+int S_id = 7;
+int C_id = 8;
+
+// All variables counters
+int psk_id_1 = 1;
+int psk_1 = 1;
+int session_id = 1;
+int a = 1;
+int msg_len = 1;
+int crandom = 1;
+int S = 1;
+int C = 1;
+
+// type is either -1, -2, -3 or an variables id
+// number is the corresponding value relevant for the type
+typedef struct {
+    int type;
+    int number;
+} variable;
+
+variable var1;
+variable var2;
+variable var3;
+variable var4;
+variable var5;
+variable var6;
+variable var7;
+variable var8;
+variable var9;
+variable var10;
+variable var11;
+variable var12;
+variable var13;
+variable var14;
+variable var15;
+variable var16;
+variable var17;
+variable var18;
+variable var19;
+
+variable message[19];
+
+chan In, Out;
+
+int send_cost(int cost) {
+    cost = cost + message[0].number;
+    return cost;
+}
+
+int receive_cost(int cost) {
+    cost = cost + message[0].number * 2;
+    return cost;
+}</declaration>
+	<template>
+		<name>SeverHello</name>
+		<location id="id0" x="-238" y="-8">
+		</location>
+		<init ref="id0"/>
+	</template>
+	<template>
+		<name x="5" y="5">ClientHelloPsk</name>
+		<declaration>// Place local declarations here.
+int cost = 0;
+
+void S_out_func(int C, int S, int psk_id_1, int psk_1) {
+    // Variables
+    var1.type = C_id; var1.number = C;
+    var2.type = S_id; var2.number = S;
+    var3.type = psk_id_1_id; var3.number = psk_id_1;
+    var4.type = psk_1_id; var4.number = psk_1;    
+}
+
+void St_ClientHello_func(int C, int S, int a, int psk_1, int session_id, int crandom) {
+    // Variables
+    var1.type = C_id; var1.number = C;
+    var2.type = S_id; var2.number = S;
+    var3.type = a_id; var3.number = a;
+    var4.type = psk_1_id; var4.number = psk_1;
+    var5.type = session_id_id; var5.number = session_id;
+    var6.type = crandom_id; var6.number = crandom;
+}
+
+void ClientSessionHandshakeHistory_func(int C, int S, int str1, int crandom, int str2, int str3, int psk_id_1, int str4, int str5, int str6, int str7, int str8) {
+    // Variables
+    var1.type = C_id; var1.number = C;
+    var2.type = S_id; var2.number = S;
+    var3.type = str; var3.number = str1;
+    var4.type = crandom_id; var4.number = crandom;
+    var5.type = str; var5.number = str2;
+    var6.type = str; var6.number = str3;
+    var7.type = psk_id_1_id; var7.number = psk_id_1;
+    var8.type = str; var8.number = str4;
+    var9.type = str; var9.number = str5;
+    var10.type = str; var10.number = str6;
+    var11.type = str; var11.number = str7;
+    var12.type = str; var12.number = str8;
+}
+
+void ClientNextSeqAndEpoch_func(int session_id, int nat1, int nat2) {
+    // Variables
+    var1.type = session_id_id; var1.number = session_id;
+    var2.type = nat; var2.number = nat1;
+    var3.type = nat; var3.number = nat2;
+}
+
+void ClientRecSeqAndEpoch_func(int session_id, int nat1, int nat2) {
+    // Variables
+    var1.type = session_id_id; var1.number = session_id;
+    var2.type = nat; var2.number = nat1;
+    var3.type = nat; var3.number = nat2;
+}
+
+void DHExp_func(int a, int session_id, int C) {
+    // Variables
+    var1.type = a_id; var1.number = a;
+    var2.type = session_id_id; var2.number = session_id;
+    var3.type = C_id; var3.number = C;
+}
+
+void out_func(int A, int B, int a, int b) {
+    // Cost
+    message[0].type = -1;
+    message[0].number = 200;
+
+    // Message
+    message[1].type = str;
+    message[1].number = s_22;
+
+    message[2].type = nat;
+    message[2].number = 1;
+
+    message[3].type = nat;
+    message[3].number = 1;
+
+    message[4].type = msg_len_id;
+    message[4].number = msg_len;
+
+    message[5].type = str;
+    message[5].number = s_1;
+
+    message[6].type = msg_len_id;
+    message[6].number = msg_len;
+
+    message[7].type = nat;
+    message[7].number = 1;
+
+    message[8].type = nat;
+    message[8].number = 1;
+
+    message[9].type = nat;
+    message[9].number = 1;
+
+    message[10].type = crandom_id;
+    message[10].number = crandom;
+
+    message[11].type = str;
+    message[11].number = s_CipherSuits;
+
+    message[12].type = str;
+    message[12].number = s_41;
+
+    message[13].type = psk_id_1_id;
+    message[13].number = psk_id_1;
+
+    message[14].type = str;
+    message[14].number = s_45;
+
+    message[15].type = str;
+    message[15].number = s_1;
+
+    message[16].type = str;
+    message[16].number = s_51;
+
+    message[17].type = str;
+    message[17].number = s_g;
+
+    message[18].type = str;
+    message[18].number = s_ga;
+}
+
+void reset() {
+    psk_id_1++;
+    psk_1++;
+    session_id++;
+    a++;
+    msg_len++;
+    crandom++;
+    C++;
+    S++;
+}</declaration>
+		<location id="id1" x="-399" y="-25">
+		</location>
+		<location id="id2" x="-280" y="-25">
+		</location>
+		<location id="id3" x="101" y="-25">
+		</location>
+		<location id="id4" x="382" y="-25">
+		</location>
+		<location id="id5" x="382" y="127">
+		</location>
+		<location id="id6" x="93" y="127">
+		</location>
+		<location id="id7" x="-280" y="127">
+		</location>
+		<location id="id8" x="-399" y="127">
+		</location>
+		<init ref="id1"/>
+		<transition id="id9">
+			<source ref="id8"/>
+			<target ref="id1"/>
+			<label kind="assignment" x="-399" y="51">reset()</label>
+		</transition>
+		<transition id="id10">
+			<source ref="id7"/>
+			<target ref="id8"/>
+			<label kind="synchronisation" x="-365" y="102">DHExp!</label>
+			<label kind="assignment" x="-467" y="153">DHExp_func(a, session_id, C)</label>
+		</transition>
+		<transition id="id11">
+			<source ref="id6"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="-187" y="127">ClientRecSeqAndEpoch!</label>
+			<label kind="assignment" x="-263" y="93">ClientRecSeqAndEpoch_func(session_id, 1, 1)</label>
+		</transition>
+		<transition id="id12">
+			<source ref="id5"/>
+			<target ref="id6"/>
+			<label kind="synchronisation" x="144" y="102">ClientNextSeqAndEpoch!</label>
+			<label kind="assignment" x="85" y="144">ClientNextSeqAndEpoch_func(session_id, 1, 2)</label>
+		</transition>
+		<transition id="id13">
+			<source ref="id4"/>
+			<target ref="id5"/>
+			<label kind="synchronisation" x="382" y="34">ClientSessionHandshakeHistory!</label>
+			<label kind="assignment" x="382" y="51">ClientSessionHandshakeHistory_func(C, S, s_1, crandom, s_CipherSuits, s_41, psk_id_1, s_45, s_1, s_51, s_g, s_ga)</label>
+		</transition>
+		<transition id="id14">
+			<source ref="id3"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="169" y="-51">St_ClientHello!</label>
+			<label kind="assignment" x="25" y="-68">St_ClientHello_func(C, S, a, psk_1, session_id, crandom)</label>
+		</transition>
+		<transition id="id15">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="synchronisation" x="-136" y="-51">S_out!</label>
+			<label kind="assignment" x="-246" y="-25">S_out_func(C, S, psk_id_1, psk_1)</label>
+		</transition>
+		<transition id="id16">
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="-357" y="-51">Out!</label>
+		</transition>
+	</template>
+	<template>
+		<name>Adversary</name>
+		<declaration>int cost = 0;
+</declaration>
+		<location id="id17" x="110" y="0">
+			<committed/>
+		</location>
+		<location id="id18" x="0" y="0">
+		</location>
+		<init ref="id18"/>
+		<transition id="id19">
+			<source ref="id18"/>
+			<target ref="id18"/>
+			<label kind="synchronisation" x="-136" y="-42">In!</label>
+			<label kind="assignment" x="-280" y="-17">cost = send_cost(cost)</label>
+			<nail x="-68" y="-59"/>
+			<nail x="-68" y="51"/>
+		</transition>
+		<transition id="id20">
+			<source ref="id17"/>
+			<target ref="id18"/>
+		</transition>
+		<transition id="id21">
+			<source ref="id17"/>
+			<target ref="id18"/>
+			<label kind="synchronisation" x="51" y="68">In!</label>
+			<label kind="assignment" x="84" y="29">cost = send_cost(cost)</label>
+			<nail x="59" y="59"/>
+		</transition>
+		<transition id="id22">
+			<source ref="id18"/>
+			<target ref="id17"/>
+			<label kind="synchronisation" x="42" y="-85">Out?</label>
+			<label kind="assignment" x="0" y="-68">cost = receive_cost(cost)</label>
+			<nail x="59" y="-51"/>
+		</transition>
+	</template>
+	<system>// Place template instantiations here.
+ClientHelloPskP = ClientHelloPsk();
+Ad = Adversary();
+
+// List one or more processes to be composed into a system.
+system ClientHelloPskP, Ad;
+</system>
+	<queries>
+		<query>
+			<formula/>
+			<comment/>
+		</query>
+	</queries>
+</nta>
