@@ -1179,6 +1179,7 @@ rule ClientFinishedAuth:
         Neq('g', gb), Neq(gb, traffic_key), /* Ensure gb is not DH_Neutral */
         Eq(hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>>)>), server_finished), 
         Eq(verify(serverSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>>), ServerCertificate>), serverPublicKey), true),
+        ClientCert($C, $S, session_id, ClientCertificate),
         Send($C, $S, 'CF', session_id) ]->
       [ Out(<DTLSCipherText, $C, $S>) /*client finished*/,
         Out(<DTLSCipherTextCC, $C, $S>), 
@@ -1641,13 +1642,13 @@ lemma H2_Session_key_secrecy[reuse]:
 
 /* If the client has accepted authentication from the server, then the server must have sent their identity on a trace with equal handshake history*/
 /* ISSUE: We cant be sure on C and S... */
-lemma H3_Authentication[reuse]:
+lemma H3_Authentication:
 "
-  All actor1 actor2 role1 role2 HandshakeHistory #i.
+  All actor1 actor2 role1 HandshakeHistory #i.
     CommitAuth(actor1, actor2, role1, HandshakeHistory) @ i
-    & not(Ex #p. Corrupt(C) @ p) 
-    & not(Ex #q. Corrupt(S) @ q)
-      ==> (Ex #r. Running(actor2, role2, HandshakeHistory) @ r)
+    & not(Ex #p. Corrupt(actor1) @ p) 
+    & not(Ex #q. Corrupt(actor2) @ q)
+      ==> (Ex role2 #r. Running(actor2, role2, HandshakeHistory) @ r)
 "
 
 // ISSUE: The adversary can change the identifiers and troll the server
@@ -1674,6 +1675,16 @@ All C S key nonce #i #j.
   ==>
     not((Ex #k. K(key) @ k))
 "
+
+lemma H8_Prot_Endpoint_Identity[reuse]:
+"
+  All actor1 actor2 cert session_id #i.
+    ClientCert(actor1, actor2, session_id, cert) @ i
+    & not(Ex #p. Corrupt(actor1) @ p) 
+    & not(Ex #q. Corrupt(actor2) @ q)
+      ==> not(Ex #r. K(cert) @ r)
+"
+
 /*
 lemma R1_Confidentiality:
 "
