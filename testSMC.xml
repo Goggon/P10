@@ -29,10 +29,10 @@ variable var3;
 variable var4;
 variable var5;
 
-variable message[4];
+variable message[5];
 
 chan In, Out;
-void msg(variable incomming[4]) {
+void msg(variable incomming[5]) {
     message = incomming;
 }
 
@@ -82,24 +82,34 @@ void Fact_B2_func(int id, int y) {
 
 broadcast chan DoneB, DoneA;
 
-void get_in4(variable &amp;msg[4]) {
-    msg[0].name = message[0].name;
-    msg[0].number = message[0].number;
+void get_in4(variable &amp;msg[5]) {
+    msg[0].name = message[1].name;
+    msg[0].number = message[1].number;
 
-    msg[1].name = message[1].name;
-    msg[1].number = message[1].number;
+    msg[1].name = message[2].name;
+    msg[1].number = message[2].number;
 
-    msg[2].name = message[2].name;
-    msg[2].number = message[2].number;
+    msg[2].name = message[3].name;
+    msg[2].number = message[3].number;
 
-    msg[3].name = message[3].name;
-    msg[3].number = message[3].number; 
+    msg[3].name = message[4].name;
+    msg[3].number = message[4].number; 
 }
 
+int send_cost(int cost) {
+    cost = cost + message[0].number;
+    return cost;
+}
+
+int receive_cost(int cost) {
+    cost = cost + message[0].number * 2;
+    return cost;
+}
 </declaration>
 	<template>
 		<name>A2</name>
-		<declaration>variable in1[4];
+		<declaration>variable in1[5];
+int cost = 0;
 
 bool premis[3] = {false, false, false};
 bool premis_check() {
@@ -142,23 +152,17 @@ void reset() {
 		</location>
 		<location id="id2" x="-280" y="-25">
 		</location>
-		<location id="id3" x="-280" y="-246">
-		</location>
 		<init ref="id2"/>
+		<transition id="id3">
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-459" y="-246">premis_check() &amp;&amp;
+!pattern_match_check()</label>
+			<label kind="assignment" x="-459" y="-204">reset()</label>
+			<nail x="-323" y="-204"/>
+			<nail x="-391" y="-161"/>
+		</transition>
 		<transition id="id4">
-			<source ref="id3"/>
-			<target ref="id2"/>
-			<label kind="guard" x="-348" y="-127">!global_check()</label>
-			<label kind="synchronisation" x="-306" y="-144">In!</label>
-		</transition>
-		<transition id="id5">
-			<source ref="id3"/>
-			<target ref="id2"/>
-			<label kind="guard" x="-459" y="-178">global_check()</label>
-			<label kind="assignment" x="-484" y="-161">premis[2] = true</label>
-			<nail x="-374" y="-110"/>
-		</transition>
-		<transition id="id6">
 			<source ref="id2"/>
 			<target ref="id2"/>
 			<label kind="guard" x="-314" y="25">!premis[1]</label>
@@ -168,7 +172,7 @@ get_Fact_A2()</label>
 			<nail x="-314" y="25"/>
 			<nail x="-246" y="25"/>
 		</transition>
-		<transition id="id7">
+		<transition id="id5">
 			<source ref="id2"/>
 			<target ref="id2"/>
 			<label kind="guard" x="-501" y="-68">!premis[0]</label>
@@ -178,27 +182,28 @@ get_Fact_A1()</label>
 			<nail x="-357" y="-76"/>
 			<nail x="-357" y="17"/>
 		</transition>
-		<transition id="id8">
+		<transition id="id6">
 			<source ref="id2"/>
-			<target ref="id3"/>
-			<label kind="guard" x="-186" y="-144">!premis[2]</label>
-			<label kind="synchronisation" x="-178" y="-161">In?</label>
-			<label kind="assignment" x="-178" y="-127">get_in4(in1)</label>
-			<nail x="-195" y="-110"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="-263" y="-178">In?</label>
+			<label kind="assignment" x="-263" y="-153">get_in4(in1),
+premis[2] = true,
+cost = receive_cost(cost)</label>
+			<nail x="-280" y="-178"/>
 		</transition>
-		<transition id="id9">
+		<transition id="id7">
 			<source ref="id0"/>
 			<target ref="id2"/>
 			<label kind="assignment" x="-127" y="42">reset()</label>
 			<nail x="-25" y="42"/>
 			<nail x="-204" y="42"/>
 		</transition>
-		<transition id="id10">
+		<transition id="id8">
 			<source ref="id1"/>
 			<target ref="id0"/>
 			<label kind="synchronisation" x="-42" y="-51">DoneA!</label>
 		</transition>
-		<transition id="id11">
+		<transition id="id9">
 			<source ref="id2"/>
 			<target ref="id1"/>
 			<label kind="guard" x="-246" y="-76">premis_check() &amp;&amp;
@@ -207,28 +212,45 @@ pattern_match_check()</label>
 	</template>
 	<template>
 		<name>Adversary</name>
-		<location id="id12" x="110" y="0">
+		<declaration>int cost = 0;
+</declaration>
+		<location id="id10" x="110" y="0">
 			<committed/>
 		</location>
-		<location id="id13" x="0" y="0">
+		<location id="id11" x="0" y="0">
 		</location>
-		<init ref="id13"/>
+		<init ref="id11"/>
+		<transition id="id12">
+			<source ref="id11"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="-136" y="-42">In!</label>
+			<label kind="assignment" x="-280" y="-17">cost = send_cost(cost)</label>
+			<nail x="-68" y="-59"/>
+			<nail x="-68" y="51"/>
+		</transition>
+		<transition id="id13">
+			<source ref="id10"/>
+			<target ref="id11"/>
+		</transition>
 		<transition id="id14">
-			<source ref="id12"/>
-			<target ref="id13"/>
+			<source ref="id10"/>
+			<target ref="id11"/>
 			<label kind="synchronisation" x="51" y="68">In!</label>
+			<label kind="assignment" x="84" y="29">cost = send_cost(cost)</label>
 			<nail x="59" y="59"/>
 		</transition>
 		<transition id="id15">
-			<source ref="id13"/>
-			<target ref="id12"/>
-			<label kind="synchronisation" x="42" y="-17">Out?</label>
+			<source ref="id11"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="42" y="-85">Out?</label>
+			<label kind="assignment" x="0" y="-68">cost = receive_cost(cost)</label>
+			<nail x="59" y="-51"/>
 		</transition>
 	</template>
 	<template>
 		<name>B1</name>
 		<declaration>// Place local declarations here.
-
+int cost = 0;
 
 bool premis[1] = {false};
 bool premis_check() {
@@ -249,20 +271,25 @@ void get_Fact_B2() {
     Fact_B2_var2 = var2;
 }
 
-variable in1[4];
+variable in1[5];
 
 void out_func(int B, int A, int a, int b) {
-    message[0].name = B_identifier;
-    message[0].number = B;
+    // Cost
+    message[0].name = -1;
+    message[0].number = 200;
 
-    message[1].name = A_identifier;
-    message[1].number = A;
+    // Message
+    message[1].name = B_identifier;
+    message[1].number = B;
 
-    message[2].name = a_identifier;
-    message[2].number = a;
+    message[2].name = A_identifier;
+    message[2].number = A;
 
-    message[3].name = b_identifier;
-    message[3].number = b;
+    message[3].name = a_identifier;
+    message[3].number = a;
+
+    message[4].name = b_identifier;
+    message[4].number = b;
 }
 
 void reset() {
@@ -302,10 +329,10 @@ void reset() {
 		<transition id="id24">
 			<source ref="id16"/>
 			<target ref="id16"/>
-			<label kind="guard" x="-331" y="-187">!premis[0]</label>
-			<label kind="synchronisation" x="-314" y="-204">In?</label>
-			<label kind="assignment" x="-348" y="-170">premis[0] = true,
-get_in4(in1)</label>
+			<label kind="synchronisation" x="-314" y="-221">In?</label>
+			<label kind="assignment" x="-348" y="-195">premis[0] = true,
+get_in4(in1),
+cost = receive_cost(cost)</label>
 			<nail x="-255" y="-127"/>
 			<nail x="-323" y="-127"/>
 		</transition>
@@ -318,7 +345,8 @@ get_in4(in1)</label>
 			<source ref="id19"/>
 			<target ref="id20"/>
 			<label kind="synchronisation" x="-25" y="8">Out!</label>
-			<label kind="assignment" x="-110" y="51">out_func(in1[1].number, in1[0].number, x, y)</label>
+			<label kind="assignment" x="-110" y="51">out_func(in1[1].number, in1[0].number, x, y),
+cost = send_cost(cost)</label>
 		</transition>
 		<transition id="id27">
 			<source ref="id18"/>
@@ -341,19 +369,25 @@ get_in4(in1)</label>
 	<template>
 		<name x="5" y="5">A1</name>
 		<declaration>// Place local declarations here.
+int cost = 0;
 
 void out_func(int A, int B, int a, int b) {
-    message[0].name = A_identifier;
-    message[0].number = A;
+    // Cost
+    message[0].name = -1;
+    message[0].number = 200;
 
-    message[1].name = B_identifier;
-    message[1].number = B;
+    // Message
+    message[1].name = A_identifier;
+    message[1].number = A;
 
-    message[2].name = a_identifier;
-    message[2].number = a;
+    message[2].name = B_identifier;
+    message[2].number = B;
 
-    message[3].name = b_identifier;
-    message[3].number = b;
+    message[3].name = a_identifier;
+    message[3].number = a;
+
+    message[4].name = b_identifier;
+    message[4].number = b;
 }
 
 void reset() {
@@ -383,7 +417,8 @@ void reset() {
 			<source ref="id32"/>
 			<target ref="id33"/>
 			<label kind="synchronisation" x="-187" y="17">Out!</label>
-			<label kind="assignment" x="-221" y="34">out_func(A, B, a, b)</label>
+			<label kind="assignment" x="-221" y="34">out_func(A, B, a, b),
+cost = send_cost(cost)</label>
 			<nail x="-85" y="-25"/>
 		</transition>
 		<transition id="id36">
@@ -412,6 +447,10 @@ system A1, B1, A2, Ad;
 	<queries>
 		<query>
 			<formula>A[] not deadlock </formula>
+			<comment/>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (Ad.cost &lt; (A1.cost + A2.cost + B1.cost) * 5)</formula>
 			<comment/>
 		</query>
 	</queries>
