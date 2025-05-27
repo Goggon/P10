@@ -68,7 +68,7 @@ rule ClientHello:
         Send($C, $S, 'CH', ~session_id),
         CH_ClientHello($C, $S, ~session_id, <'1', ClientHello>) ]->
       [ Out(<DTLSPlaintext, $C, $S>) /*clienthello plaintext*/,
-        St_ClientHello(<$C, $S, ~a, ~session_id, <h1(<'1', ClientHello>)>>, <~session_id, 1:nat %+ 1:nat, 1:nat, 1:nat, 1:nat>), /*We need to save the handshake context*/
+        St_ClientHello(<$C, $S, ~a, ~session_id, <h1(<'1', ClientHello>)>>, <~session_id, 1:nat %+ 1:nat, 1:nat, 1:nat, 1:nat>), 
         DHExp(~a, ~session_id, $C) ]
 
 // HelloRetryRequest
@@ -611,7 +611,7 @@ rule ServerFinished:
         ServerNonce($S, <client_session_id, session_id>) ]
     --[ Instance(session_id, $S, 'server'),
         Send($S, $C, 'SF', session_id), Reach('SF'),
-        Running($S, 'server', <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>) /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/ ]->
+        Running($S, 'server', session_id, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>, traffic_key) /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/ ]->
       [ Out(<DTLSCipherTextSF, $S, $C>), /*server finished*/
         ServerFinished(<$S, $C, finished_key>, <$S, $C, hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify>)>), <client_session_id, session_id>>),
         St_ServerFinished(<$S, $C, session_id, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, <'20', ServerFinished>>>, <session_id, %next_seq %+ 1:nat, %next_epoch %+ 1:nat, %rec_seq, %rec_epoch>, RecordNumbers) ]
@@ -840,11 +840,11 @@ rule ClientFinishedNoAuth:
         In(<ServerDTLSCipherTextSF, $S, $C>) /*server finished*/ ]
     --[ Instance(session_id, $C, 'client'),
         HandshakeComplete($C, $S, 'client', traffic_key, <session_id, server_session_id>), Reach('CFNoAuth'),
-        DHChal($S, session_id, 'g', a, 'g'^a, gb, gb^a),
+        DHChal($C, session_id, 'g', a, 'g'^a, gb, gb^a),
         SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
         FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
         Nonce($C, <session_id, server_session_id>),
-        CommitAuth($C, $S, 'client', <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>), /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/
+        CommitAuth($C, $S, 'client', session_id, <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>, traffic_key), /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/
         Neq('g', gb), Neq(gb, traffic_key), /* Ensure gb is not DH_Neutral */
         Eq(hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', CertificateVerify>>)>), server_finished), 
         Eq(verify(serverSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>>), ServerCertificate>), serverPublicKey), true),
@@ -1142,12 +1142,12 @@ rule ClientFinishedAuth:
         !Ltk($C, clientPrivateKey) ]
     --[ Instance(session_id, $C, 'client'),
         HandshakeComplete($C, $S, 'client', traffic_key, <session_id, server_session_id>), Reach('CFAuth'),
-        DHChal($S, session_id, 'g', a, 'g'^a, gb, gb^a),
+        DHChal($C, session_id, 'g', a, 'g'^a, gb, gb^a),
         SessionKey($C, $S, 'client', session_id, traffic_key, 'auth'),
         FragmentsInOrder(%offSC_1, %offSC_2, %offSC_3, %offSC_4, %offSC_5),
         Nonce($C, <session_id, server_session_id>),
-        Running($C, 'client', <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>, <'20', ServerFinished>>),
-        CommitAuth($C, $S, 'client', <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>>), /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/
+        Running($C, 'client', session_id, <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>, <'20', ServerFinished>>, traffic_key),
+        CommitAuth($C, $S, 'client', session_id, <ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>>, traffic_key), /* Used to ensure peer authentication, if a client has accepted a servers indentity, then a server must have sent their identity on a session equal to the one sent by the client*/
         Neq('g', gb), Neq(gb, traffic_key), /* Ensure gb is not DH_Neutral */
         Eq(hmac(<finished_key, h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>, <'15', ServerCertificateVerify>>)>), server_finished), 
         Eq(verify(serverSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, <'2', ServerHello>, <'8', EncryptedExtensions>, <'11', ServerCertificate>>), ServerCertificate>), serverPublicKey), true),
@@ -1247,7 +1247,7 @@ rule Ack:
         Eq(client_finished, server_finished), 
         Eq(auth_status, 'True'), Reach('ACK'),
         Eq(verify(clientSignature, hmac(<h1(<ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>), 'clientCert'>), clientPublicKey), true),
-        CommitAuth($S, $C, 'server', <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>),
+        CommitAuth($S, $C, 'server', session_id, <ClientHello, HelloRetryRequest, ClientHelloCookie, ServerHello, EncryptedExtensions, ServerCertificate, CertificateVerify, ServerFinished>, traffic_key),
         HandshakeComplete($S, $C, 'server', traffic_key, nonce),
         SessionKey($S, $C, 'server', session_id, traffic_key, 'auth'),
         Send($S, $C, 'ACK', session_id) ]->
@@ -1363,13 +1363,30 @@ lemma dh_challenge[reuse]:
   All actor1 actor2 random1 random2 g a b ga gb gab #i #j #r.
     DHChal(actor1, random1, g, a, ga, gb, gab) @ i 
     & DHChal(actor2, random2, g, b, ga, gb, gab) @ j
+    & not(#i = #j)
     & K(gab) @ r
       ==> 
-        (Ex #p. (RevDHExp(a, random1, actor1) @ p)) | 
-        (Ex #q. (RevDHExp(b, random2, actor2) @ q))
+        (Ex #p. RevDHExp(a, random1, actor1) @ p) | 
+        (Ex #q. RevDHExp(b, random2, actor2) @ q) |
+        (Ex #s. Corrupt(actor1) @ s) | 
+        (Ex #t. Corrupt(actor2) @ t) 
 "
 
+lemma consistent_nonces[reuse]:
+  "All actor1 actor2 role session_id HandshakeHistory #i. 
+    CommitAuth(actor1, actor2, role, session_id, HandshakeHistory, key)@i ==>
+      Ex key #j. Running(actor1, role, session_id, HandshakeHistory, key)@j"
 
+lemma matching_sessions[reuse]:
+  "All actor1 actor2 role1 role2 session_id1 session_id2 HandshakeHistory key #i #j #k.
+    Running(actor1, role1, session_id1, HandshakeHistory, key)@i & 
+    Running(actor2, role2, session_id2, HandshakeHistory, key)@j &
+    not (role1 = role2) &
+    K(key)@k ==>
+      (Ex random1 a #r. RevDHExp(a, random1, actor1) @ r & #r < #i) |
+      (Ex random2 b #r. RevDHExp(b, random2, actor2) @ r & #r < #j) |
+      (Ex #r. Corrupt(actor1) @ r & #r < #i) | 
+      (Ex #r. Corrupt(actor2) @ r & #r < #j)"
 
 // Restriction R1: Restrict the actors to not instigate in more than one handshake with each others at a time
 // This is relistic, since two honest actors to not want to attempt to instantiate two handshakes with each other at one time
@@ -1412,8 +1429,8 @@ restriction R4_Fragments_in_order:
 
 restriction R9_rev_dh_before_hs:
 "
-  All tid actor role hs x #i #j.
-    Running(actor, role, hs) @ j &
+  All tid actor role hs session_id key x #i #j.
+    Running(actor, role, session_id, hs, key) @ j &
     RevDHExp(x, tid, actor) @ i ==>
     #i < #j
 "
@@ -1446,11 +1463,11 @@ lemma H2_Session_key_secrecy:
 /* ISSUE: We cant be sure on C and S... */
 lemma H3_Authentication:
 "
-  All actor1 actor2 role1 HandshakeHistory #i.
-    CommitAuth(actor1, actor2, role1, HandshakeHistory) @ i
+  All actor1 actor2 role1 session_id HandshakeHistory #i.
+    CommitAuth(actor1, actor2, role1, session_id, HandshakeHistory, key) @ i
     & not(Ex #p. Corrupt(actor1) @ p) 
     & not(Ex #q. Corrupt(actor2) @ q)
-      ==> (Ex role2 #r. Running(actor2, role2, HandshakeHistory) @ r)
+      ==> (Ex role2 key #r. Running(actor2, role2, session_id, HandshakeHistory, key) @ r)
 "
 
 // ISSUE: The adversary can change the identifiers and troll the server
