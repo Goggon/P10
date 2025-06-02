@@ -1,0 +1,26 @@
+theory Test
+begin
+builtins: hashing, diffie-hellman, symmetric-encryption, asymmetric-encryption, signing, natural-numbers
+
+rule a1:
+let
+    test =
+    < ~testy >
+
+    encryptTest =
+    < senc (<test>, ~key) >
+
+in
+[Fr(~key),
+Fr(~testy)] 
+--[Send(~key, test)]-> 
+[Out(encryptTest)]
+
+lemma doesAdvKnow:
+"
+    All key hidden #i. Send(key, hidden) @ i 
+    ==>
+        not(Ex #j. K(hidden) @ j)
+"
+
+end
