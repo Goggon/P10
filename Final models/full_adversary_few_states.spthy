@@ -1435,10 +1435,6 @@ restriction R9_rev_dh_before_hs:
     #i < #j
 "
 
-// Handhsake property H1: Succesfully established sessionskeys should be the same amongst pairs.
-// When two session keys are created in a connection, the sessionkeys should be the same
-// The lemma specify; For all traces where a client and a server complete a handshake with each other, and non of the are corrupt, the sessionkeys should be the same
-// ISSUE: The adversary can change the identifiers and troll the server
 lemma H1_Establishing_the_same_session_keys:
 "
   All C S client_session_id server_session_id keyC keyS #i #j.
@@ -1459,8 +1455,6 @@ lemma H2_Session_key_secrecy:
     | (Ex #q. Corrupt(peer) @ q)
 "
 
-/* If the client has accepted authentication from the server, then the server must have sent their identity on a trace with equal handshake history*/
-/* ISSUE: We cant be sure on C and S... */
 lemma H3_Authentication:
 "
   All actor1 actor2 role1 session_id HandshakeHistory key #i.
@@ -1470,7 +1464,6 @@ lemma H3_Authentication:
       ==> (Ex role2 #r. Running(actor2, role2, session_id, HandshakeHistory, key) @ r)
 "
 
-// ISSUE: The adversary can change the identifiers and troll the server
 lemma H4_Unique_session_keys:
 "
   All actor1 actor2 peer1 peer2 role key session_id1 session_id2 auth1 auth2 #i #j.

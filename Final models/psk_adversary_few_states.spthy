@@ -440,10 +440,6 @@ lemma dh_challenge[reuse]:
         (Ex #t. Corrupt(actor2) @ t) 
 "
 
-
-// Restriction R1: Restrict the actors to not instigate in more than one handshake with each others at a time
-// This is relistic, since two honest actors to not want to attempt to instantiate two handshakes with each other at one time
-// The restriction specify; If two session has been started, then the first session must have been complete before the new one start
 restriction R1_Only_one_session_per_pair_at_a_time:
 "
   All actor1 actor2 role session_id1 session_id2 #i #j.
@@ -451,18 +447,12 @@ restriction R1_Only_one_session_per_pair_at_a_time:
       ==> Ex traffic_key #k. HandshakeComplete(actor1, actor2, role, traffic_key, <session_id1, session_id2>) @ k & k < j & i < k
 "
 
-// Restriction R2: Restrict the actors to not make sessions with them selves
-// The restriction is self explanitory
-// The restriction specify; Actors may not start a session with them self
 restriction R2_Dont_essablish_session_with_self:
 "
   All actor1 actor2 role session_id #i.
     Start(actor1, actor2, role, session_id) @ #i & actor1 = actor2 ==> F
 "
 
-// Restriction R3: Dont resend messages. If a message that has already been processed is received again, ignore it.
-// The restriction is a measure taken directly from the specification to not allow for replay attacks
-// The restriction specify; If a message type is send twich on the same session id, then it must happen at the same time (it has in fact only been send once)
 restriction R3_Dont_resend_messages:
 "
   All actor1 actor2 msg_type session_id #i #j.
@@ -477,10 +467,6 @@ restriction R9_rev_dh_before_hs:
     #i < #j
 "
 
-// Handhsake property H1: Succesfully established sessionskeys should be the same amongst pairs.
-// When two session keys are created in a connection, the sessionkeys should be the same
-// The lemma specify; For all traces where a client and a server complete a handshake with each other, and non of the are corrupt, the sessionkeys should be the same
-// ISSUE: The adversary can change the identifiers and troll the server
 lemma H1_Establishing_the_same_session_keys:
 "
   All C S client_session_id server_session_id keyC keyS #i #j.
@@ -501,8 +487,6 @@ lemma H2_Session_key_secrecy:
     | (Ex #q. Corrupt(peer) @ q)
 "
 
-/* If the client has accepted authentication from the server, then the server must have sent their identity on a trace with equal handshake history*/
-/* ISSUE: We cant be sure on C and S... */
 lemma H3_Authentication:
 "
   All actor1 actor2 role1 session_id HandshakeHistory key #i.
@@ -512,7 +496,6 @@ lemma H3_Authentication:
       ==> (Ex role2 #r. RunningAuth(actor2, role2, session_id, HandshakeHistory, key) @ r)
 "
 
-// ISSUE: The adversary can change the identifiers and troll the server
 lemma H4_Unique_session_keys:
 "
   All actor1 actor2 peer1 peer2 role key session_id1 session_id2 auth1 auth2 #i #j.

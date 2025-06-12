@@ -264,28 +264,11 @@ restriction Only_update_key_once:
   All actor1 actor2 role session_id s #i #j.
     Reach(actor1, actor2, role, session_id, s) @ i & Reach(actor1, actor2, role, session_id, s) @ j ==> #i = #j
 "
-/*restriction Stop_send:
-"
-  All actor1 actor2 msg session_key len %seq %epoch #i.
-    SendMsg(actor1, actor2, msg, session_key, len, %seq, %epoch) @ i
-      ==> 
-        %seq ⊏ 1:nat %+ 1:nat// %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat
-        & %epoch ⊏ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat //%+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat
-"
-
-restriction Stop_rec:
-"
-  All actor1 actor2 msg session_key len %seq %epoch #i.
-    ReceivedMsg(actor1, actor2, msg, session_key, len, %seq, %epoch) @ i
-      ==> 
-        %seq ⊏ 1:nat %+ 1:nat// %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat
-        & %epoch ⊏ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat //%+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat %+ 1:nat
-"*/
 
 restriction Only_one_start:
 "
-  All actor1 actor2 role session_id1 session_id2 #i #j.
-    Start(actor1, actor2, role, session_id1) @ i & Start(actor1, actor2, role, session_id2) @ j ==> #i = #j
+  All actor1 actor2 actor3 actor4 role1 role2 session_id1 session_id2 #i #j.
+    Start(actor1, actor2, role1, session_id1) @ i & Start(actor3, actor4, role2, session_id2) @ j ==> #i = #j
 "
 
 restriction Must_start:
@@ -293,20 +276,8 @@ restriction Must_start:
   All actor1 actor2 role session_id #i.
     Instance(actor1, actor2, role, session_id) @ i ==> Ex #j. Start(actor1, actor2, role, session_id) @ j & #j < #i 
 "
-/*
-restriction Only_5_instance_of_app:
-"
-  All actor1 actor2 role session_id #i #j #k #l #m #n.
-    SendApp(actor1, actor2, role, session_id) @ i
-    & SendApp(actor1, actor2, role, session_id) @ j
-    & SendApp(actor1, actor2, role, session_id) @ k
-    & SendApp(actor1, actor2, role, session_id) @ l
-    & SendApp(actor1, actor2, role, session_id) @ m
-    & SendApp(actor1, actor2, role, session_id) @ n
-      ==> #i = #j | #i = #k | #i = #l | #i = #m | #i = #n 
-"*/
 
-restriction Only_x_instance_of_app:
+restriction Only_2_instance_of_app:
 "
   All actor1 actor2 role session_id #i #j.
     SendApp(actor1, actor2, role, session_id) @ i
